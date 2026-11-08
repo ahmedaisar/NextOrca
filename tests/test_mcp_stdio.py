@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 # ruff: isort: off
 import shutil
 import sys
