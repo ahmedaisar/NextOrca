@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from nextorca.context import ContextBudget, ContextLimitError
 
 
