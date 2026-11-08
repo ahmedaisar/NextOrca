@@ -80,6 +80,8 @@ class LinuxBubblewrapSandbox:
                 if candidate.absolute() != resolved:
                     raise SandboxError("Writable paths cannot traverse symlinks.")
                 resolved.relative_to(self.workspace_root)
+            except SandboxError:
+                raise
             except (OSError, RuntimeError, ValueError) as exc:
                 raise SandboxError(
                     f"Writable path {value!r} must be an existing directory inside the workspace."
