@@ -244,6 +244,35 @@ uv run nextorca --workspace ./data/repos/tqdm "Map the main package structure."
 
 The runtime accepts `--base-url`, `--model`, `--api-key`, `--workspace` and `--max-turns`; `NEXTORCA_BASE_URL`, `NEXTORCA_API_KEY` and `NEXTORCA_MODEL` can supply defaults. Use `--verbose` to emit structured turn/tool events to stderr. Each run also prints a session ID to stderr; pass it back with `--session-id` to resume. The default SQLite database is `~/.nextorca/sessions.sqlite3` and can be changed with `--session-db` or `NEXTORCA_SESSION_DB`. Session files are written with owner-only database permissions. The runtime preserves system/user messages and recent turns; when the context budget is exceeded, it elides older tool output and assistant prose and records a `context_pruned` checkpoint. It errors rather than silently dropping required user/system context.
 
+## Hybrid Model Routing (experimental)
+
+The CLI can use both a local OpenAI-compatible model endpoint and a cloud OpenAI-compatible provider. In automatic mode, NextOrca routes repository exploration and code explanation locally, while edits, debugging, tests, reviews and planning use the cloud model. The router emits a structured decision reason when `--verbose` is enabled.
+
+```bash
+export NEXTORCA_LOCAL_BASE_URL=http://127.0.0.1:8080/v1
+export NEXTORCA_LOCAL_MODEL=your-local-tool-calling-model
+
+export NEXTORCA_CLOUD_BASE_URL=https://openrouter.ai/api/v1
+export NEXTORCA_CLOUD_MODEL=qwen/qwen3-coder-next
+export OPENROUTER_API_KEY=your-key
+
+uv run nextorca --route-mode auto --workspace ./my-repo \
+  "Map the main package structure."
+
+uv run nextorca --route-mode auto --verbose --workspace ./my-repo \
+  "Refactor the retry logic and add tests."
+```
+
+Routing controls:
+
+- `--route-mode auto`: route retrieval/explanation to local and more demanding coding tasks to cloud; temporarily unavailable local inference can escalate to cloud.
+- `--route-mode local`: force local inference.
+- `--route-mode cloud`: force the configured cloud provider.
+- `--privacy-mode local-only`: never send prompts/tool context to a cloud provider; use with `--route-mode local` or `auto`.
+- `--route-mode single`: preserve the original one-provider behavior and `--base-url`/`--model` options.
+
+Set `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_LOCAL_API_KEY` and `NEXTORCA_CLOUD_API_KEY` to persist provider settings. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The router currently uses a deterministic request classifier, not learned confidence scoring; its decisions are visible and manually overridable.
+
 ## Approved File Edits and Undo (experimental)
 
 The independent runtime remains read-only by default. To enable file creation and exact-text edits, pass `--allow-edits`. The agent will prepare a unified diff and ask for explicit interactive approval before changing a file. Shell execution is still unavailable.
