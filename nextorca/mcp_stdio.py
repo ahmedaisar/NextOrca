@@ -10,7 +10,8 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, ClassVar, Self
 
 from nextorca.sandbox import LinuxBubblewrapSandbox, SandboxError
 from nextorca.tool_registry import (
@@ -129,9 +130,11 @@ def _validate_remote_value(
     }.get(expected, False)
     if not valid:
         raise ToolExecutionError(f"MCP argument {path} must be {expected}.")
-    if isinstance(value, str):
-        if len(value) < schema.get("minLength", 0) or len(value) > schema.get("maxLength", 100_000):
-            raise ToolExecutionError(f"MCP argument {path} violates its length limits.")
+    if isinstance(value, str) and (
+        len(value) < schema.get("minLength", 0)
+        or len(value) > schema.get("maxLength", 100_000)
+    ):
+        raise ToolExecutionError(f"MCP argument {path} violates its length limits.")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if "minimum" in schema and value < schema["minimum"]:
             raise ToolExecutionError(f"MCP argument {path} is below its minimum.")
@@ -681,8 +684,9 @@ class MCPStdioClient:
                 *,
                 tool_name: str = remote_name,
                 schema_name: str = internal_name,
+                tool_schema: dict[str, Any] = schema,
             ) -> PreparedToolOperation:
-                _validate_remote_arguments(schema, arguments, tool_name=tool_name)
+                _validate_remote_arguments(tool_schema, arguments, tool_name=tool_name)
                 preview = (
                     f"External MCP operation: {self.config.name}.{tool_name}\n"
                     f"Model tool name: {schema_name}\n"
@@ -754,9 +758,14 @@ class MCPStdioClient:
             self._closed = True
             self._stop_process()
 
-    def __enter__(self) -> "MCPStdioClient":
+    def __enter__(self) -> Self:
         self.connect()
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()
