@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from nextorca.context import ContextBudget, ContextLimitError
 from nextorca.provider import ChatProvider, ProviderError
-from nextorca.session_store import SQLiteSessionStore
+from nextorca.session_store import SQLiteSessionStore, SessionStoreError
 from nextorca.tool_registry import (
     ToolExecutionError,
     ToolRegistry,
@@ -259,7 +259,7 @@ class AgentRuntime:
                     "model_metrics",
                     metrics,
                 )
-            except Exception:
+            except SessionStoreError:
                 # Telemetry persistence must not discard a valid model response.
                 self._emit("metrics_persist_failed", turn=turn)
 
