@@ -288,7 +288,6 @@ class MCPStdioClient:
         *,
         workspace_root: Path | str,
         request_timeout_seconds: float | None = None,
-        sandbox: Any | None = None,
     ) -> None:
         self.config = config
         self.workspace_root = Path(workspace_root).expanduser().resolve(strict=True)
@@ -298,7 +297,7 @@ class MCPStdioClient:
         if not 0.5 <= self.request_timeout_seconds <= 120:
             raise ValueError("MCP request timeout must be between 0.5 and 120 seconds.")
         try:
-            self.sandbox = sandbox or LinuxBubblewrapSandbox(
+            self.sandbox = LinuxBubblewrapSandbox(
                 self.workspace_root,
                 allow_network=config.network_access,
                 writable_paths=config.writable_paths,
