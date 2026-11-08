@@ -1,11 +1,18 @@
+import importlib.util
+from pathlib import Path
+
 import pytest
 
-from scripts.agent_protocol import (
-    ToolCallParseError,
-    build_anthropic_content,
-    openai_to_anthropic_response,
-    parse_tool_calls,
-)
+MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "agent_protocol.py"
+SPEC = importlib.util.spec_from_file_location("agent_protocol", MODULE_PATH)
+assert SPEC is not None and SPEC.loader is not None
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+
+ToolCallParseError = MODULE.ToolCallParseError
+build_anthropic_content = MODULE.build_anthropic_content
+openai_to_anthropic_response = MODULE.openai_to_anthropic_response
+parse_tool_calls = MODULE.parse_tool_calls
 
 
 def test_plain_text_is_preserved():
