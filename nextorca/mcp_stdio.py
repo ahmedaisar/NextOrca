@@ -318,16 +318,13 @@ class MCPStdioClient:
         self._closed = False
 
     def _process_environment(self) -> dict[str, str]:
-        environment = {
-            key: value
-            for key, value in os.environ.items()
-            if key.upper() in _SAFE_INHERITED_ENV
+        # bubblewrap owns PATH, HOME, temp paths, locale and workspace identity.
+        # Only explicitly named application variables cross into the sandbox.
+        return {
+            key: os.environ[key]
+            for key in self.config.env_passthrough
+            if key in os.environ
         }
-        for key in self.config.env_passthrough:
-            value = os.environ.get(key)
-            if value is not None:
-                environment[key] = value
-        return environment
 
     def _start_process(self) -> None:
         if self._closed:
