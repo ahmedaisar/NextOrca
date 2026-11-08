@@ -23,14 +23,26 @@ class AgentRuntimeError(RuntimeError):
 
 
 class PermissionPolicy(Protocol):
-    def authorize(self, tool: ToolSpec, arguments: dict[str, Any]) -> bool:
+    def authorize(
+        self,
+        tool: ToolSpec,
+        arguments: dict[str, Any],
+        *,
+        preview: str | None = None,
+    ) -> bool:
         """Return True only when this invocation is permitted."""
 
 
 class ReadOnlyPermissionPolicy:
     """Safe default policy: only explicitly read-only registered tools may run."""
 
-    def authorize(self, tool: ToolSpec, arguments: dict[str, Any]) -> bool:
+    def authorize(
+        self,
+        tool: ToolSpec,
+        arguments: dict[str, Any],
+        *,
+        preview: str | None = None,
+    ) -> bool:
         return tool.read_only
 
 
@@ -108,10 +120,20 @@ class AgentRuntime:
     def _tool_result(self, call: ToolCall) -> str:
         try:
             spec = self.tools.get(call.name)
-            if not self.permission_policy.authorize(spec, call.arguments):
+            prepared = self.tools.prepare(spec, call.arguments)
+            preview = prepared.preview if prepared is not None else None
+            if not self.permission_policy.authorize(
+                spec,
+                call.arguments,
+                preview=preview,
+            ):
                 self._emit("tool_denied", tool=call.name)
-                return f"Permission denied: tool '{call.name}' is not allowed by the active policy."
-            result = self.tools.execute(call.name, call.arguments)
+                return f"Permission denied: tool '{call.name}' was not approved."
+            result = (
+                self.tools.execute_prepared(prepared)
+                if prepared is not None
+                else self.tools.execute(call.name, call.arguments)
+            )
         except (ToolValidationError, ToolExecutionError) as exc:
             self._emit("tool_error", tool=call.name, error=type(exc).__name__)
             return f"Tool error: {exc}"
