@@ -18,11 +18,11 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from proxy_security import RequestValidationError, authorization_matches, parse_content_length
-
-from agent_protocol import (
-    ToolCallParseError,
-    openai_to_anthropic_response,
+from agent_protocol import ToolCallParseError, openai_to_anthropic_response
+from proxy_security import (
+    RequestValidationError,
+    authorization_matches,
+    parse_content_length,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -360,11 +360,11 @@ class ProxyServer(ThreadingHTTPServer):
         if not self._worker_slots.acquire(blocking=False):
             payload = b'{"error":"proxy connection capacity reached"}'
             response = (
-                b"HTTP/1.1 503 Service Unavailable\\r\\n"
-                b"Content-Type: application/json\\r\\n"
-                b"Content-Length: " + str(len(payload)).encode() + b"\\r\\n"
-                b"Connection: close\\r\\n"
-                b"Retry-After: 2\\r\\n\\r\\n" + payload
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(payload)).encode() + b"\r\n"
+                b"Connection: close\r\n"
+                b"Retry-After: 2\r\n\r\n" + payload
             )
             try:
                 request.sendall(response)
