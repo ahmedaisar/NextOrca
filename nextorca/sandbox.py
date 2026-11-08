@@ -111,13 +111,19 @@ class LinuxBubblewrapSandbox:
             raise SandboxError("MCP executable could not be resolved.") from exc
         if not resolved.is_file() or not os.access(resolved, os.X_OK):
             raise SandboxError("MCP command does not resolve to an executable file.")
-        allowed = [self.workspace_root]
-        allowed.extend(Path(value).resolve(strict=False) for value in self.SYSTEM_PATHS)
-        if not any(resolved == root or root in resolved.parents for root in allowed):
-            raise SandboxError(
-                "MCP executable is outside the sandbox visible system paths and workspace."
-            )
-        return (str(resolved), *command[1:])
+        if self.workspace_root == resolved or self.workspace_root in resolved.parents:
+            relative = resolved.relative_to(self.workspace_root)
+            sandbox_executable = "/workspace/" + relative.as_posix()
+        else:
+            system_roots = [Path(value).resolve(strict=False) for value in self.SYSTEM_PATHS]
+            if not any(
+                resolved == root or root in resolved.parents for root in system_roots
+            ):
+                raise SandboxError(
+                    "MCP executable is outside the sandbox visible system paths and workspace."
+                )
+            sandbox_executable = str(resolved)
+        return (sandbox_executable, *command[1:])
 
     @staticmethod
     def _add_system_mounts(argv: list[str]) -> None:
