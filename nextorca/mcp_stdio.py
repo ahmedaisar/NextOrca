@@ -545,6 +545,13 @@ class MCPStdioClient:
                 return result
 
     def connect(self) -> None:
+        try:
+            self._connect()
+        except Exception:
+            self.close()
+            raise
+
+    def _connect(self) -> None:
         self._start_process()
 
         # Probe the modern stateless era first. Legacy servers commonly return
