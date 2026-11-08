@@ -280,7 +280,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     self.close_connection = True
                     self.end_headers()
                     headers_sent = True
-                    for chunk in response.iter_raw():
+                    for chunk in response.iter_bytes():
                         if chunk:
                             self.wfile.write(chunk)
                             self.wfile.flush()
