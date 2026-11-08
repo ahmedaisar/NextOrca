@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate local Claude Code settings without copying cloud credentials to disk."""
 
 from __future__ import annotations
@@ -8,7 +7,7 @@ import os
 import secrets
 import tempfile
 from pathlib import Path
-from typing import Mapping
+from collections.abc import Mapping
 
 from dotenv import dotenv_values
 
