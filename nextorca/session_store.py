@@ -21,8 +21,6 @@ class SQLiteSessionStore:
             raise SessionStoreError("Refusing to use a symlink as the session database.")
         try:
             requested.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            if hasattr(os, "chmod"):
-                os.chmod(requested.parent, 0o700)
             self.path = requested.resolve(strict=False)
             self._initialize()
             if hasattr(os, "chmod"):
