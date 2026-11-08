@@ -10,6 +10,7 @@ from pathlib import Path
 from nextorca.mcp_stdio import MCPStdioClient, load_mcp_config
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.permissions import InteractiveApprovalPolicy
+from nextorca.plugins import build_plugin_tools, discover_plugins, format_plugin_catalog
 from nextorca.routing import HybridRouter
 from nextorca.runtime import AgentConfig, AgentRuntime, ReadOnlyPermissionPolicy
 from nextorca.session_store import SQLiteSessionStore
@@ -224,7 +225,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         if interactive:
             tools.register(build_shell_tool(workspace))
 
-        skills, skill_errors = discover_skills(workspace.root)
+        plugins, plugin_errors = discover_plugins(workspace.root)
+        for error in plugin_errors:
+            print(f"nextorca: {error}", file=sys.stderr)
+        for plugin in plugins:
+            for plugin_tool in build_plugin_tools(plugin, workspace):
+                tools.register(plugin_tool)
+
+        plugin_skill_roots = [
+            skill_root for plugin in plugins for skill_root in plugin.skill_roots
+        ]
+        skills, skill_errors = discover_skills(
+            workspace.root,
+            extra_roots=plugin_skill_roots,
+        )
         for error in skill_errors:
             print(f"nextorca: {error}", file=sys.stderr)
         if skills:
@@ -264,7 +278,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             if interactive or edits_enabled or mcp_enabled
             else ReadOnlyPermissionPolicy()
         )
-        system_prompt = AgentConfig().system_prompt + format_skill_catalog(skills)
+        system_prompt = (
+            AgentConfig().system_prompt
+            + format_skill_catalog(skills)
+            + format_plugin_catalog(plugins)
+        )
         if edits_enabled:
             system_prompt += (
                 " Write and Edit operations are available, but every mutation requires the "

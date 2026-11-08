@@ -79,8 +79,7 @@ Each phase is a separate sequential pull request. A phase is merged only after i
 
 **Acceptance:** Existing compatible Agent Skills can be copied into a supported folder and discovered; a selected skill's instructions become available to the model; malformed or escaping skill paths are rejected.
 
-### Phase 3 — Plugin system
-
+### Phase 3 — Plugin system (current implementation PR)\n
 **Goal:** Support installable, manageable local extensions without allowing plugins to bypass the tool policy.
 
 - Define a small versioned plugin manifest.

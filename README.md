@@ -17,6 +17,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - [Quickstart](#quickstart)
 - [Examples](#examples)
 - [Skills](#skills)
+- [Plugins](#plugins)
 - [Configuration](#configuration)
 - [Contributing](#contributing)
 - [Limitations and security](#limitations-and-security)
@@ -29,6 +30,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Privacy mode:** `local-only` prevents prompts and tool context from being sent to a cloud provider.
 - **Interactive terminal agent:** launch without a prompt to start a persistent conversation.\n- **Coding tools:** read, search, edit files and run project commands with explicit approval.
 - **Agent Skills:** discover compatible SKILL.md guides from your project or user skill folders and load them on demand.
+- **Local plugins:** bundle skills and approval-gated command tools using a versioned JSON manifest.
 - **Approval-gated edits:** file creation and exact-text edits are disabled by default; opt in with `--allow-edits` and approve each proposed diff.
 - **Undo checkpoints:** inspect approved changes and undo a checkpoint when the target file has not changed since.
 - **Persistent sessions:** SQLite-backed session history and resumable session IDs.
@@ -193,6 +195,14 @@ description: Run focused tests before and after making code changes.
 Only skill names and descriptions are added to the agent's initial context. The full instructions are loaded only when the agent selects a matching skill. Project skills take precedence over user-wide skills with the same name. Skill files are guidance, not a permission mechanism: they cannot bypass tool approvals.
 
 See [the skills guide](docs/skills.md) for details.
+
+## Plugins
+
+Plugins are local folders containing a `plugin.json` manifest. NextOrca discovers project plugins in `.nextorca/plugins/<plugin-id>/` and user plugins in `~/.nextorca/plugins/<plugin-id>/`.
+
+A plugin can bundle Agent Skills and command-backed tools. Plugin tools are registered with the normal tool registry and require explicit approval for every invocation. Commands use argv arrays, not a shell string, and run with your user permissions in the current project directory.
+
+See [the plugin guide](docs/plugins.md) and [the example plugin](examples/plugins/git-helper).
 
 ## Configuration
 
