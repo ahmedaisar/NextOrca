@@ -216,8 +216,12 @@ def load_mcp_config(path: Path | str) -> list[MCPServerConfig]:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise MCPServerError("MCP configuration could not be read as valid JSON.") from exc
 
-    if not isinstance(payload, dict) or not isinstance(payload.get("servers"), list):
-        raise MCPServerError("MCP configuration must contain a 'servers' array.")
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"servers"}
+        or not isinstance(payload.get("servers"), list)
+    ):
+        raise MCPServerError("MCP configuration must contain only a 'servers' array.")
     rows = payload["servers"]
     if len(rows) > MAX_MCP_SERVERS:
         raise MCPServerError(f"At most {MAX_MCP_SERVERS} MCP servers may be configured.")
@@ -227,6 +231,16 @@ def load_mcp_config(path: Path | str) -> list[MCPServerConfig]:
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             raise MCPServerError(f"MCP server entry {index} must be an object.")
+        allowed_fields = {
+            "name", "command", "env_passthrough", "cwd",
+            "timeout_seconds", "network_access", "writable_paths",
+        }
+        unknown_fields = set(row) - allowed_fields
+        if unknown_fields:
+            raise MCPServerError(
+                f"MCP server entry {index} has unsupported fields: "
+                + ", ".join(sorted(str(field) for field in unknown_fields))
+            )
         name = row.get("name")
         command = row.get("command")
         env_passthrough = row.get("env_passthrough", [])
@@ -253,6 +267,7 @@ def load_mcp_config(path: Path | str) -> list[MCPServerConfig]:
             raise MCPServerError(f"MCP server '{name}' command argument is too long.")
         if (
             not isinstance(env_passthrough, list)
+            or len(env_passthrough) > 64
             or not all(
                 isinstance(key, str)
                 and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
@@ -274,7 +289,10 @@ def load_mcp_config(path: Path | str) -> list[MCPServerConfig]:
         if (
             not isinstance(writable_paths, list)
             or len(writable_paths) > 32
-            or not all(isinstance(value, str) and value for value in writable_paths)
+            or not all(
+                isinstance(value, str) and 0 < len(value) <= 256
+                for value in writable_paths
+            )
         ):
             raise MCPServerError(
                 f"MCP server '{name}' writable_paths must be an array of at most 32 paths."
