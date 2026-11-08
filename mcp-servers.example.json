@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "name": "workspace-reader",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/tools/mcp_server.py"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 15,
+      "network_access": false,
+      "writable_paths": [],
+      "env_passthrough": []
+    }
+  ]
+}
