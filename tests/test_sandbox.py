@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -115,9 +114,12 @@ def test_command_and_working_directory_must_be_confined(tmp_path):
             working_directory=outside,
             environment={},
         )
+    outside_executable = outside / "external-command"
+    outside_executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    outside_executable.chmod(0o755)
     with pytest.raises(SandboxError, match="outside the sandbox"):
         sandbox.wrap(
-            ["/bin/echo" if Path("/bin/echo").exists() else "/etc/passwd"],
+            [str(outside_executable)],
             working_directory=tmp_path,
             environment={},
         )
