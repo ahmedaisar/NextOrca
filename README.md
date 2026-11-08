@@ -28,10 +28,12 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Provider-neutral runtime:** connect to local or hosted OpenAI-compatible APIs.
 - **Hybrid routing:** route codebase exploration to a local model and more demanding coding tasks to a cloud model, with manual local/cloud overrides.
 - **Privacy mode:** `local-only` prevents prompts and tool context from being sent to a cloud provider.
-- **Interactive terminal agent:** launch without a prompt to start a persistent conversation.\n- **Coding tools:** read, search, edit files and run project commands with explicit approval.
+- **Interactive terminal agent:** launch without a prompt to start a persistent conversation.
+- **Streaming responses:** compatible providers can stream assistant text directly into the terminal.
+- **Coding tools:** read, search, edit files and run project commands with explicit approval.
 - **Agent Skills:** discover compatible SKILL.md guides from your project or user skill folders and load them on demand.
 - **Local plugins:** bundle skills and approval-gated command tools using a versioned JSON manifest.
-- **Approval-gated edits:** file creation and exact-text edits are disabled by default; opt in with `--allow-edits` and approve each proposed diff.
+- **Approval-gated edits:** interactive sessions expose file creation and exact-text edits with a diff approval before each change; one-shot mode stays read-only by default.
 - **Undo checkpoints:** inspect approved changes and undo a checkpoint when the target file has not changed since.
 - **Persistent sessions:** SQLite-backed session history and resumable session IDs.
 - **Local observability:** inspect provider, latency, token-usage, and routing metrics without sending telemetry to an analytics service.
@@ -80,7 +82,15 @@ uv run nextorca \
 
 Interactive mode provides read, search, edit and shell tools. File edits show a diff and shell commands show the exact command before asking for approval.
 
-### 3. Start an interactive coding session\n\n```bash\nuv run nextorca --workspace ./path/to/your-repository\n```\n\nType requests naturally. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/goal`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.\n\n### 4. Connect a hosted provider (optional)
+### 3. Start an interactive coding session
+
+```bash
+uv run nextorca --workspace ./path/to/your-repository
+```
+
+Type requests naturally. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/goal`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
+
+### 4. Connect a hosted provider (optional)
 
 ```bash
 export NEXTORCA_BASE_URL=https://openrouter.ai/api/v1
@@ -95,7 +105,14 @@ Use your provider's own compatible base URL, model identifier, and API key varia
 
 ## Examples
 
-### Start the terminal agent\n\n```bash\ncd ./my-repo\nuv run nextorca\n```\n\n### Explore a codebase
+### Start the terminal agent
+
+```bash
+cd ./my-repo
+uv run nextorca
+```
+
+### Explore a codebase
 
 ```bash
 uv run nextorca --workspace ./my-repo \

@@ -97,7 +97,9 @@ def run_repl(runtime: AgentRuntime) -> None:
             if runtime.last_session_id:
                 runtime.session_id = runtime.last_session_id
                 print(f"\n[{runtime.last_session_id}]")
-            if answer:
+            if runtime.last_turn_streamed:
+                print()
+            elif answer:
                 print(f"\n{answer}")
         except KeyboardInterrupt:
             print("\nRequest interrupted. The saved session can be continued.")

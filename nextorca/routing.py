@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
@@ -9,7 +9,7 @@ from nextorca.provider import (
     ProviderError,
     ProviderUnavailableError,
 )
-from nextorca.types import AssistantTurn
+from nextorca.types import AssistantTurn, ProviderStreamChunk
 
 RouteMode = Literal["auto", "local", "cloud"]
 PrivacyMode = Literal["balanced", "local-only"]
@@ -192,3 +192,63 @@ class HybridRouter:
                 messages=messages,
                 tools=tools,
             )
+
+
+    @staticmethod
+    def _stream_provider(
+        provider: ChatProvider,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> Iterator[ProviderStreamChunk]:
+        stream_method = getattr(provider, "stream_complete", None)
+        if callable(stream_method):
+            yield from stream_method(model=model, messages=messages, tools=tools)
+        else:
+            yield ProviderStreamChunk(
+                final_turn=provider.complete(model=model, messages=messages, tools=tools)
+            )
+
+    def stream_complete(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> Iterator[ProviderStreamChunk]:
+        provider, decision = self._select(messages)
+        self._emit(decision)
+        emitted = False
+        try:
+            for chunk in self._stream_provider(
+                provider, model=decision.model, messages=messages, tools=tools
+            ):
+                emitted = emitted or bool(chunk.content_delta or chunk.final_turn)
+                yield chunk
+            return
+        except ProviderUnavailableError:
+            if (
+                emitted
+                or decision.provider != "local"
+                or self.route_mode != "auto"
+                or self.privacy_mode == "local-only"
+                or self.cloud_provider is None
+                or self.cloud_model is None
+            ):
+                raise
+
+        fallback = RouteDecision(
+            task=decision.task,
+            provider="cloud",
+            model=self.cloud_model,
+            reason="local provider unavailable before stream output; escalating to cloud",
+            fallback_from="local",
+        )
+        self._emit(fallback)
+        yield from self._stream_provider(
+            self.cloud_provider,
+            model=fallback.model,
+            messages=messages,
+            tools=tools,
+        )
