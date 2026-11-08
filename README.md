@@ -16,6 +16,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Examples](#examples)
+- [Skills](#skills)
 - [Configuration](#configuration)
 - [Contributing](#contributing)
 - [Limitations and security](#limitations-and-security)
@@ -27,6 +28,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Hybrid routing:** route codebase exploration to a local model and more demanding coding tasks to a cloud model, with manual local/cloud overrides.
 - **Privacy mode:** `local-only` prevents prompts and tool context from being sent to a cloud provider.
 - **Interactive terminal agent:** launch without a prompt to start a persistent conversation.\n- **Coding tools:** read, search, edit files and run project commands with explicit approval.
+- **Agent Skills:** discover compatible SKILL.md guides from your project or user skill folders and load them on demand.
 - **Approval-gated edits:** file creation and exact-text edits are disabled by default; opt in with `--allow-edits` and approve each proposed diff.
 - **Undo checkpoints:** inspect approved changes and undo a checkpoint when the target file has not changed since.
 - **Persistent sessions:** SQLite-backed session history and resumable session IDs.
@@ -162,6 +164,35 @@ uv run nextorca --workspace ./my-repo \
 ```
 
 MCP subprocesses require Linux and Bubblewrap. They run with isolated namespaces, dropped capabilities, a read-only workspace by default, and no network access unless explicitly enabled. Every external tool call requires interactive approval. See the manifest example and the [MCP sandbox notes](#limitations-and-security).
+
+## Skills
+
+NextOrca discovers Agent Skills in these project locations:
+
+- `.agents/skills/<skill-name>/SKILL.md`
+- `.claude/skills/<skill-name>/SKILL.md`
+- `.nextorca/skills/<skill-name>/SKILL.md`
+- `~/.nextorca/skills/<skill-name>/SKILL.md` for user-wide skills
+
+Each SKILL.md starts with simple YAML frontmatter containing a name and description:
+
+```markdown
+---
+name: test-first
+description: Run focused tests before and after making code changes.
+---
+
+# Test-first workflow
+
+1. Find the tests closest to the code being changed.
+2. Run the focused tests before editing when practical.
+3. Make the smallest useful change.
+4. Run focused tests again and report the actual result.
+```
+
+Only skill names and descriptions are added to the agent's initial context. The full instructions are loaded only when the agent selects a matching skill. Project skills take precedence over user-wide skills with the same name. Skill files are guidance, not a permission mechanism: they cannot bypass tool approvals.
+
+See [the skills guide](docs/skills.md) for details.
 
 ## Configuration
 

@@ -14,6 +14,7 @@ from nextorca.routing import HybridRouter
 from nextorca.runtime import AgentConfig, AgentRuntime, ReadOnlyPermissionPolicy
 from nextorca.session_store import SQLiteSessionStore
 from nextorca.shell import build_shell_tool
+from nextorca.skills import build_skill_tool, discover_skills, format_skill_catalog
 from nextorca.workspace import Workspace, build_workspace_tools
 
 
@@ -222,6 +223,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if interactive:
             tools.register(build_shell_tool(workspace))
+
+        skills, skill_errors = discover_skills(workspace.root)
+        for error in skill_errors:
+            print(f"nextorca: {error}", file=sys.stderr)
+        if skills:
+            tools.register(build_skill_tool(skills))
+            if interactive:
+                print(f"Loaded {len(skills)} Agent Skill(s).", file=sys.stderr)
         if mcp_enabled:
             if args.mcp_config is None:
                 raise ValueError(
@@ -255,7 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if interactive or edits_enabled or mcp_enabled
             else ReadOnlyPermissionPolicy()
         )
-        system_prompt = AgentConfig().system_prompt
+        system_prompt = AgentConfig().system_prompt + format_skill_catalog(skills)
         if edits_enabled:
             system_prompt += (
                 " Write and Edit operations are available, but every mutation requires the "
