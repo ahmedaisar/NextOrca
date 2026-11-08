@@ -8,7 +8,6 @@ import pytest
 
 from nextorca.sandbox import LinuxBubblewrapSandbox, SandboxError
 
-
 SYSTEM_TEST_PYTHON = "/usr/bin/python3"
 
 
