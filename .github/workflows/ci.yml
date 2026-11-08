@@ -22,5 +22,6 @@ jobs:
             bash -n "$script"
           done
       - run: uv run nextorca --help
+      - run: uv run python -c "from nextorca.mcp_stdio import MCPStdioClient, load_mcp_config; print('MCP stdio import OK')"
       - run: uv run python evals/evaluate_routing.py --fail-under 0.95
       - run: uv run pytest
