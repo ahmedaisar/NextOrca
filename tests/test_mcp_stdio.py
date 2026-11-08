@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -126,25 +127,22 @@ for line in sys.stdin:
 '''
 
 
-class _TestSandbox:
-    """Test-only process adapter; production clients must use an OS sandbox."""
+pytestmark = pytest.mark.skipif(
+    not sys.platform.startswith("linux") or shutil.which("bwrap") is None,
+    reason="MCP stdio tests require the Linux Bubblewrap sandbox.",
+)
 
-    def __init__(self, workspace_root: Path):
-        self.workspace_root = workspace_root.resolve()
 
-    def wrap(self, command, *, working_directory, environment):
-        return list(command), dict(environment)
+MCP_TEST_PYTHON = "/usr/bin/python3"
 
 
 def _client(script: str, tmp_path: Path, name: str = "test") -> MCPStdioClient:
     config = MCPServerConfig(
         name=name,
-        command=(sys.executable, "-u", "-c", script),
+        command=(MCP_TEST_PYTHON, "-u", "-c", script),
         timeout_seconds=3.0,
     )
-    return MCPStdioClient(
-        config, workspace_root=tmp_path, sandbox=_TestSandbox(tmp_path)
-    )
+    return MCPStdioClient(config, workspace_root=tmp_path)
 
 
 def test_modern_mcp_discovery_lists_and_calls_tools(tmp_path, monkeypatch):
@@ -230,12 +228,12 @@ def test_env_passthrough_is_explicit(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_EXPLICIT_VALUE", "visible")
     config = MCPServerConfig(
         name="explicit",
-        command=(sys.executable, "-u", "-c", MODERN_SERVER),
+        command=(MCP_TEST_PYTHON, "-u", "-c", MODERN_SERVER),
         env_passthrough=("MCP_EXPLICIT_VALUE",),
         timeout_seconds=3.0,
     )
     client = MCPStdioClient(
-        config, workspace_root=tmp_path, sandbox=_TestSandbox(tmp_path)
+        config, workspace_root=tmp_path
     )
     environment = client._process_environment()
     assert environment["MCP_EXPLICIT_VALUE"] == "visible"
@@ -290,11 +288,11 @@ for line in sys.stdin:
 '''
     config = MCPServerConfig(
         name="slow",
-        command=(sys.executable, "-u", "-c", script),
+        command=(MCP_TEST_PYTHON, "-u", "-c", script),
         timeout_seconds=0.5,
     )
     client = MCPStdioClient(
-        config, workspace_root=tmp_path, sandbox=_TestSandbox(tmp_path)
+        config, workspace_root=tmp_path
     )
     client.connect()
     process = client.process
