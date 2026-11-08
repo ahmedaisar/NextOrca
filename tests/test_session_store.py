@@ -5,7 +5,7 @@ import stat
 
 import pytest
 
-from nextorca.session_store import SQLiteSessionStore, SessionStoreError
+from nextorca.session_store import SessionStoreError, SQLiteSessionStore
 
 
 def test_session_store_persists_messages_and_events(tmp_path):
