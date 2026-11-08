@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Batch analyze queries for a project. Auto-starts llama-server and proxy.
+# Batch read-only analysis. Results are saved by this script, not by the agent.
 # Usage: ./scripts/analyze.sh <project> [batch_size]
 set -euo pipefail
 
@@ -11,27 +11,45 @@ BATCH_SIZE="${2:-5}"
 TEMPLATE="$PROJ_DIR/prompts/analyze_query.txt"
 QUERY_FILE="$PROJ_DIR/data/queries/${PROJECT}-queries.txt"
 OUTPUT_DIR="$PROJ_DIR/data/outputs/$PROJECT"
+REPO_DIR="$PROJ_DIR/data/repos/$PROJECT"
 
+if [[ ! "$PROJECT" =~ ^[A-Za-z0-9._-]+$ ]] || [[ "$PROJECT" == "." || "$PROJECT" == ".." ]]; then
+  echo "ERROR: project must be a simple directory name." >&2
+  exit 2
+fi
+if ! [[ "$BATCH_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: batch_size must be a positive integer." >&2
+  exit 2
+fi
+if [ ! -d "$REPO_DIR" ]; then
+  echo "ERROR: repository directory not found: $REPO_DIR" >&2
+  exit 1
+fi
 if [ ! -f "$QUERY_FILE" ]; then
-  echo "ERROR: query file not found: $QUERY_FILE"
+  echo "ERROR: query file not found: $QUERY_FILE" >&2
   exit 1
 fi
 
 source "$PROJ_DIR/scripts/start_services.sh"
 
 mkdir -p "$OUTPUT_DIR"
-PROMPT_TPL=$(cat "$TEMPLATE")
+PROMPT_TPL="$(cat "$TEMPLATE")"
 
 IDS=()
 QUESTIONS=()
 while IFS=$'\t' read -r id query; do
   [ -z "$id" ] && continue
+  if ! [[ "$id" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: query ID must be numeric: $id" >&2
+    exit 2
+  fi
   IDS+=("$id")
   QUESTIONS+=("$query")
 done < "$QUERY_FILE"
 
 echo "Project: $PROJECT"
 echo "Total queries: ${#QUESTIONS[@]}, batch size: $BATCH_SIZE"
+echo "Permission mode: plan (read-only)"
 
 success=0
 skipped=0
@@ -46,27 +64,30 @@ for ((i=0; i<${#QUESTIONS[@]}; i+=BATCH_SIZE)); do
     id="${IDS[$j]}"
     printf -v num '%03d' "$id"
     question="${QUESTIONS[$j]}"
-    output_file="${PROJECT}/q${num}.md"
+    output_file="$OUTPUT_DIR/q${num}.md"
 
-    if [ -f "$PROJ_DIR/data/outputs/$output_file" ]; then
+    if [ -f "$output_file" ]; then
       skipped=$((skipped + 1))
       continue
     fi
 
     prompt="${PROMPT_TPL//\{project\}/$PROJECT}"
     prompt="${prompt//\{question\}/$question}"
-    prompt="${prompt//\{output_file\}/$output_file}"
 
     (
       cd "$PROJ_DIR"
-      echo "$prompt" | claude -p \
+      tmp_output="$(mktemp "$OUTPUT_DIR/.q${num}.XXXXXX")"
+      trap 'rm -f "$tmp_output"' EXIT
+      if printf '%s\n' "$prompt" | claude -p \
+        --permission-mode plan \
         --model sonnet \
-        --add-dir "./data/repos/$PROJECT" \
-        --dangerously-skip-permissions > /dev/null 2>&1
-      if [ -f "data/outputs/$output_file" ]; then
+        --add-dir "$REPO_DIR" > "$tmp_output"; then
+        mv "$tmp_output" "$output_file"
+        trap - EXIT
         echo "  ✓ q${num} done"
       else
-        echo "  ✗ q${num} failed"
+        echo "  ✗ q${num} failed" >&2
+        exit 1
       fi
     ) &
     pids+=($!)

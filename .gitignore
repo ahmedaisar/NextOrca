@@ -1,5 +1,6 @@
 .env
 .claude/
+.nextorca-proxy-token
 models/
 data/repos/
 data/outputs/

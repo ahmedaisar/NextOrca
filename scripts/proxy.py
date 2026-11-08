@@ -1,264 +1,338 @@
 #!/usr/bin/env python3
-"""
-Hybrid proxy: routes Claude Code requests between local GGUF model and OpenRouter.
+"""Hybrid Anthropic-compatible proxy with local-model routing and cloud fallback.
 
-- Turn < MAX_LOCAL_TURNS → local llama-server (LocoOperator-4B-GGUF)
-- Turn >= MAX_LOCAL_TURNS or context exceeded → OpenRouter (Qwen3-Coder-Next)
-
-Usage:
-  # 1. Start llama-server:
-  #    llama-server --model models/LocoOperator-4B-GGUF/LocoOperator-4B.gguf \
-  #                 --port 8080 --ctx-size 32768 -ngl 99
-  #
-  # 2. Start this proxy:
-  #    uv run python scripts/proxy.py
-  #
-  # 3. Run analysis:
-  #    ANTHROPIC_BASE_URL=http://127.0.0.1:9091 claude -p "..." --dangerously-skip-permissions
+Local inference is intentionally non-streaming for now. Requests requiring streaming
+are transparently escalated to the configured remote provider until a native local
+Anthropic SSE adapter is available.
 """
 
+from __future__ import annotations
+
+import hmac
 import json
 import os
-import uuid
-import re
-import httpx
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
+
+import httpx
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+from agent_protocol import (
+    ToolCallParseError,
+    openai_to_anthropic_response,
+)
 
-LLAMA_SERVER = "http://127.0.0.1:8080"
-OPENROUTER_URL = "https://openrouter.ai/api"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
+
+LLAMA_SERVER = os.environ.get("LLAMA_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
+OPENROUTER_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api").rstrip("/")
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-LISTEN_PORT = 9091
-
+LISTEN_HOST = "127.0.0.1"
+LISTEN_PORT = int(os.environ.get("NEXTORCA_PROXY_PORT", "9091"))
 LOCAL_MODELS = {"claude-haiku-4-5-20251001"}
-REMOTE_FALLBACK_MODEL = "qwen/qwen3-coder-next"
-MAX_LOCAL_TURNS = 10
+REMOTE_FALLBACK_MODEL = os.environ.get("NEXTORCA_REMOTE_MODEL", "qwen/qwen3-coder-next")
+MAX_LOCAL_TURNS = int(os.environ.get("NEXTORCA_MAX_LOCAL_TURNS", "10"))
+MAX_REQUEST_BYTES = int(os.environ.get("NEXTORCA_MAX_REQUEST_BYTES", str(2 * 1024 * 1024)))
+MAX_CONCURRENT_REQUESTS = int(os.environ.get("NEXTORCA_MAX_CONCURRENT_REQUESTS", "4"))
+REQUEST_TIMEOUT = float(os.environ.get("NEXTORCA_REQUEST_TIMEOUT_SECONDS", "300"))
 
-_local_client = httpx.Client(mounts={"http://127.0.0.1": None}, timeout=300)
-_remote_client = httpx.Client(timeout=300)
+TOKEN_FILE = PROJECT_ROOT / ".claude" / "proxy-token"
+try:
+    PROXY_TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip()
+except OSError:
+    PROXY_TOKEN = ""
 
-TRAINING_SYSTEM_PROMPT = """You are a Claude agent, built on Anthropic's Claude Agent SDK.
-You are an interactive agent that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
+if MAX_REQUEST_BYTES <= 0 or MAX_CONCURRENT_REQUESTS <= 0 or MAX_LOCAL_TURNS <= 0:
+    raise ValueError("Proxy request, concurrency and turn limits must be positive.")
 
-# Using your tools
- - To read files use Read
- - To search for files use Glob
- - To search the content of files use Grep
- - To run shell commands use Bash
- - To write files use Write
- - To edit files use Edit
+_local_client = httpx.Client(
+    timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=10.0),
+    trust_env=False,
+)
+_remote_client = httpx.Client(
+    timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=10.0),
+    trust_env=True,
+)
+_request_slots = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
 
-For each tool call, output a JSON object within <tool_call></tool_call> tags:
+TRAINING_SYSTEM_PROMPT = """You are a read-only codebase exploration specialist.
+Use Read, Glob, and Grep for repository discovery. Avoid destructive commands.
+For each tool call, emit a JSON object inside <tool_call></tool_call> tags:
 <tool_call>
-{"name": <tool-name>, "arguments": <args-json-object>}
+{"name": "<tool-name>", "arguments": {}}
 </tool_call>
+Tool results are provided inside <tool_response></tool_response> tags."""
 
-Tool results will be provided in <tool_response></tool_response> tags."""
 
-
-def convert_anthropic_to_openai(body: dict) -> dict:
-    messages = [{"role": "system", "content": TRAINING_SYSTEM_PROMPT}]
-    for msg in body.get("messages", []):
-        role = msg["role"]
-        content = msg["content"]
+def convert_anthropic_to_openai(body: dict[str, Any]) -> dict[str, Any]:
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": TRAINING_SYSTEM_PROMPT}
+    ]
+    for message in body.get("messages", []):
+        role = message.get("role")
+        content = message.get("content", "")
+        if role not in {"user", "assistant"}:
+            continue
         if isinstance(content, str):
             messages.append({"role": role, "content": content})
-        elif isinstance(content, list):
-            parts = []
-            for block in content:
-                if block.get("type") == "text":
-                    parts.append(block["text"])
-                elif block.get("type") == "tool_use":
-                    parts.append(f"<tool_call>\n{json.dumps({'name': block['name'], 'arguments': block.get('input', {})})}\n</tool_call>")
-                elif block.get("type") == "tool_result":
-                    rc = block.get("content", "")
-                    if isinstance(rc, list):
-                        rc = " ".join(b.get("text", "") for b in rc)
-                    parts.append(f"<tool_response>\n{rc}\n</tool_response>")
-            messages.append({"role": role, "content": "\n".join(parts)})
+            continue
+        if not isinstance(content, list):
+            continue
+
+        parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type")
+            if block_type == "text":
+                parts.append(str(block.get("text", "")))
+            elif block_type == "tool_use":
+                payload = {
+                    "name": block.get("name", ""),
+                    "arguments": block.get("input", {}),
+                }
+                parts.append(f"<tool_call>\n{json.dumps(payload)}\n</tool_call>")
+            elif block_type == "tool_result":
+                result_content = block.get("content", "")
+                if isinstance(result_content, list):
+                    result_content = " ".join(
+                        str(part.get("text", ""))
+                        for part in result_content
+                        if isinstance(part, dict) and part.get("type") == "text"
+                    )
+                parts.append(f"<tool_response>\n{result_content}\n</tool_response>")
+        messages.append({"role": role, "content": "\n".join(parts)})
+
     return {
         "model": "loco-operator-4b",
         "messages": messages,
-        "max_tokens": body.get("max_tokens", 4096),
-        "temperature": body.get("temperature", 0.0),
+        "max_tokens": min(int(body.get("max_tokens", 4096)), 8192),
+        "temperature": float(body.get("temperature", 0.0)),
         "stream": False,
     }
 
 
-def parse_tool_calls(text: str) -> tuple[str, list]:
-    tool_uses = []
-    pattern = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
-    def replace(m):
-        try:
-            obj = json.loads(m.group(1))
-            tool_uses.append({
-                "type": "tool_use",
-                "id": f"toolu_{uuid.uuid4().hex[:24]}",
-                "name": obj.get("name", ""),
-                "input": obj.get("arguments", obj.get("input", {})),
-            })
-        except Exception:
-            pass
-        return ""
-    remaining = pattern.sub(replace, text).strip()
-    return remaining, tool_uses
+def _json_error(handler: BaseHTTPRequestHandler, status: int, message: str) -> None:
+    payload = json.dumps({"type": "error", "error": {"type": "proxy_error", "message": message}}).encode()
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", str(len(payload)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(payload)
 
 
-def build_anthropic_content(text: str) -> tuple[list, str]:
-    remaining, tool_uses = parse_tool_calls(text)
-    content = []
-    if remaining:
-        content.append({"type": "text", "text": remaining})
-    content.extend(tool_uses)
-    stop_reason = "tool_use" if tool_uses else "end_turn"
-    return content, stop_reason
-
-
-def make_anthropic_sse(text: str, msg_id: str) -> str:
-    content, stop_reason = build_anthropic_content(text)
-    out = []
-    out.append(f"event: message_start\ndata: {json.dumps({'type': 'message_start', 'message': {'id': msg_id, 'type': 'message', 'role': 'assistant', 'content': [], 'model': 'loco-operator-4b', 'stop_reason': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}})}\n\n")
-    for i, block in enumerate(content):
-        out.append(f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': i, 'content_block': block})}\n\n")
-        if block["type"] == "text":
-            out.append(f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': i, 'delta': {'type': 'text_delta', 'text': block['text']}})}\n\n")
-        elif block["type"] == "tool_use":
-            out.append(f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': i, 'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(block['input'])}})}\n\n")
-        out.append(f"event: content_block_stop\ndata: {json.dumps({'type': 'content_block_stop', 'index': i})}\n\n")
-    out.append(f"event: message_delta\ndata: {json.dumps({'type': 'message_delta', 'delta': {'stop_reason': stop_reason, 'stop_sequence': None}, 'usage': {'output_tokens': 0}})}\n\n")
-    out.append(f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n")
-    return "".join(out)
-
-
-def openai_to_anthropic_response(oai: dict) -> dict:
-    text = oai["choices"][0]["message"]["content"] or ""
-    usage = oai.get("usage", {})
-    content, stop_reason = build_anthropic_content(text)
-    return {
-        "id": f"msg_{uuid.uuid4().hex[:24]}",
-        "type": "message",
-        "role": "assistant",
-        "content": content,
-        "model": "loco-operator-4b",
-        "stop_reason": stop_reason,
-        "stop_sequence": None,
-        "usage": {
-            "input_tokens": usage.get("prompt_tokens", 0),
-            "output_tokens": usage.get("completion_tokens", 0),
-        },
+def _forward_headers(handler: BaseHTTPRequestHandler) -> dict[str, str]:
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
     }
+    # Never forward the local proxy token or a caller-supplied credential upstream.
+    for name in ("anthropic-version", "anthropic-beta"):
+        value = handler.headers.get(name)
+        if value:
+            headers[name] = value
+    return headers
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
+    server_version = "NextOrcaProxy/0.2"
+    protocol_version = "HTTP/1.1"
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(30.0)
+
+    def log_message(self, format: str, *args: Any) -> None:
         print(f"[proxy] {format % args}")
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         if self.path in ("/health", "/healthz"):
+            payload = json.dumps(
+                {
+                    "status": "ok",
+                    "local_ready": bool(LLAMA_SERVER),
+                    "remote_configured": bool(OPENROUTER_KEY),
+                    "proxy_auth_configured": bool(PROXY_TOKEN),
+                }
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
+            self.wfile.write(payload)
+            return
+        _json_error(self, 404, "Not found")
 
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
-        raw = self.rfile.read(length)
-        body = json.loads(raw)
-        model = body.get("model", "")
-        is_stream = body.get("stream", False)
-        msgs = body.get("messages", [])
-        turn = len([m for m in msgs if m["role"] == "assistant"])
-        use_local = model in LOCAL_MODELS and turn < MAX_LOCAL_TURNS
-        print(f"[proxy] model={model} turn={turn} local={use_local} msgs={len(msgs)}")
+    def do_POST(self) -> None:
+        if self.path.split("?", 1)[0] != "/v1/messages":
+            _json_error(self, 404, "Not found")
+            return
+        if not PROXY_TOKEN:
+            _json_error(self, 503, "Local proxy authentication is not configured; run setup.")
+            return
 
-        if use_local:
-            self._handle_local(body, is_stream)
-        else:
-            if model in LOCAL_MODELS and turn >= MAX_LOCAL_TURNS:
-                print(f"[proxy] turn limit ({turn}), fallback to OpenRouter")
-                body = dict(body)
-                body["model"] = REMOTE_FALLBACK_MODEL
-                raw = json.dumps(body).encode()
-            self._handle_remote(raw, is_stream)
+        authorization = self.headers.get("Authorization", "")
+        scheme, separator, candidate = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not separator:
+            candidate = self.headers.get("x-api-key", "")
+        if not candidate or not hmac.compare_digest(candidate, PROXY_TOKEN):
+            _json_error(self, 401, "Unauthorized")
+            return
 
-    def _handle_remote(self, raw: bytes, is_stream: bool):
+        if self.headers.get("Transfer-Encoding"):
+            _json_error(self, 400, "Transfer-encoded requests are not supported.")
+            return
         try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {OPENROUTER_KEY}",
-            }
-            for k, v in self.headers.items():
-                if k.lower() in ("anthropic-version", "anthropic-beta", "x-api-key"):
-                    headers[k] = v
-            resp = _remote_client.post(f"{OPENROUTER_URL}/v1/messages", content=raw, headers=headers)
-            print(f"[proxy] remote status={resp.status_code}")
-            self.send_response(resp.status_code)
-            for k, v in resp.headers.items():
-                if k.lower() in ("content-type", "cache-control"):
-                    self.send_header(k, v)
-            self.end_headers()
-            self.wfile.write(resp.content)
-        except Exception as e:
-            print(f"[proxy] remote error: {e}")
-            self.send_response(502)
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            _json_error(self, 411, "A valid Content-Length header is required.")
+            return
+        if length < 1:
+            _json_error(self, 400, "Request body must not be empty.")
+            return
+        if length > MAX_REQUEST_BYTES:
+            _json_error(self, 413, "Request body exceeds the configured size limit.")
+            return
+        if not _request_slots.acquire(blocking=False):
+            self.send_header("Retry-After", "2")
+            _json_error(self, 503, "Proxy is busy; retry the request.")
+            return
 
-    def _handle_local(self, body: dict, is_stream: bool):
-        oai_body = convert_anthropic_to_openai(body)
-        msg_id = f"msg_{uuid.uuid4().hex[:24]}"
         try:
-            resp = _local_client.post(
-                f"{LLAMA_SERVER}/v1/chat/completions",
-                json=oai_body,
-                headers={"Content-Type": "application/json"},
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                _json_error(self, 400, "Incomplete request body.")
+                return
+            try:
+                body = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                _json_error(self, 400, "Request body must be valid JSON.")
+                return
+            if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
+                _json_error(self, 400, "Request must be a JSON object with a messages array.")
+                return
+
+            model = str(body.get("model", ""))
+            messages = body["messages"]
+            turn = sum(
+                1 for message in messages
+                if isinstance(message, dict) and message.get("role") == "assistant"
             )
-            oai_json = resp.json()
-            if "choices" not in oai_json:
-                err = oai_json.get("error", {})
-                print(f"[proxy] llama-server error: {oai_json}")
-                if err.get("type") == "exceed_context_size_error":
-                    print("[proxy] context exceeded, fallback to OpenRouter")
+            is_stream = bool(body.get("stream", False))
+            use_local = model in LOCAL_MODELS and turn < MAX_LOCAL_TURNS and not is_stream
+            print(
+                f"[proxy] model={model} turn={turn} local={use_local} "
+                f"stream={is_stream} messages={len(messages)}"
+            )
+
+            if use_local:
+                self._handle_local(body, is_stream)
+            else:
+                if model in LOCAL_MODELS and (turn >= MAX_LOCAL_TURNS or is_stream):
+                    reason = "local turn limit reached" if turn >= MAX_LOCAL_TURNS else "local streaming unavailable"
+                    print(f"[proxy] escalating to remote: {reason}")
+                    body = dict(body)
+                    body["model"] = REMOTE_FALLBACK_MODEL
+                    raw = json.dumps(body).encode()
+                self._handle_remote(raw, is_stream)
+        except (BrokenPipeError, ConnectionResetError):
+            print("[proxy] client disconnected")
+        except Exception as exc:
+            print(f"[proxy] request failed: {type(exc).__name__}")
+            if not self.wfile.closed:
+                _json_error(self, 500, "Proxy request failed.")
+        finally:
+            _request_slots.release()
+
+    def _handle_remote(self, raw: bytes, is_stream: bool) -> None:
+        if not OPENROUTER_KEY:
+            _json_error(self, 503, "Remote provider is not configured.")
+            return
+        url = f"{OPENROUTER_URL}/v1/messages"
+        try:
+            if is_stream:
+                with _remote_client.stream(
+                    "POST", url, content=raw, headers=_forward_headers(self)
+                ) as response:
+                    self.send_response(response.status_code)
+                    for name in ("content-type", "cache-control"):
+                        value = response.headers.get(name)
+                        if value:
+                            self.send_header(name, value)
+                    self.send_header("X-Accel-Buffering", "no")
+                    self.end_headers()
+                    for chunk in response.iter_raw():
+                        if chunk:
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+            else:
+                response = _remote_client.post(
+                    url, content=raw, headers=_forward_headers(self)
+                )
+                self.send_response(response.status_code)
+                for name in ("content-type", "cache-control"):
+                    value = response.headers.get(name)
+                    if value:
+                        self.send_header(name, value)
+                self.send_header("Content-Length", str(len(response.content)))
+                self.end_headers()
+                self.wfile.write(response.content)
+        except httpx.TimeoutException:
+            _json_error(self, 504, "Remote provider request timed out.")
+        except httpx.HTTPError:
+            _json_error(self, 502, "Remote provider request failed.")
+
+    def _handle_local(self, body: dict[str, Any], is_stream: bool) -> None:
+        request_body = convert_anthropic_to_openai(body)
+        try:
+            response = _local_client.post(
+                f"{LLAMA_SERVER}/v1/chat/completions",
+                json=request_body,
+            )
+            response.raise_for_status()
+            local_response = response.json()
+            if "choices" not in local_response:
+                error = local_response.get("error", {})
+                if isinstance(error, dict) and error.get("type") == "exceed_context_size_error":
                     fallback = dict(body)
                     fallback["model"] = REMOTE_FALLBACK_MODEL
                     self._handle_remote(json.dumps(fallback).encode(), is_stream)
                     return
-                raise KeyError("choices")
-            text = oai_json["choices"][0]["message"]["content"] or ""
-            print(f"[proxy] local output: {text[:200]}")
-            if is_stream:
-                sse = make_anthropic_sse(text, msg_id)
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.end_headers()
-                self.wfile.write(sse.encode())
-            else:
-                out = json.dumps(openai_to_anthropic_response(oai_json)).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(out)))
-                self.end_headers()
-                self.wfile.write(out)
-        except Exception as e:
-            print(f"[proxy] local error: {e}")
-            self.send_response(502)
+                raise ValueError("Local provider returned an invalid response.")
+
+            converted = openai_to_anthropic_response(local_response)
+            payload = json.dumps(converted).encode()
+            self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            self.wfile.write(payload)
+        except ToolCallParseError:
+            _json_error(self, 502, "Local model returned an invalid tool-call envelope.")
+        except httpx.TimeoutException:
+            _json_error(self, 504, "Local model request timed out.")
+        except httpx.HTTPError:
+            _json_error(self, 502, "Local model request failed.")
+        except (ValueError, KeyError, TypeError):
+            _json_error(self, 502, "Local model returned an invalid response.")
+
+
+class ProxyServer(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 32
 
 
 if __name__ == "__main__":
+    if not PROXY_TOKEN:
+        raise SystemExit("Local proxy token missing. Run scripts/setup.sh before starting the proxy.")
     if not OPENROUTER_KEY:
-        print("WARNING: OPENROUTER_API_KEY not set in .env")
-    server = HTTPServer(("127.0.0.1", LISTEN_PORT), ProxyHandler)
-    print(f"Proxy listening on http://127.0.0.1:{LISTEN_PORT}")
-    print(f"Local: llama-server at {LLAMA_SERVER} (turns < {MAX_LOCAL_TURNS})")
+        print("WARNING: OPENROUTER_API_KEY not set; remote fallback is unavailable.")
+    server = ProxyServer((LISTEN_HOST, LISTEN_PORT), ProxyHandler)
+    print(f"Proxy listening on http://{LISTEN_HOST}:{LISTEN_PORT}")
+    print(f"Local: llama-server at {LLAMA_SERVER} (turns < {MAX_LOCAL_TURNS}, non-streaming)")
     print(f"Remote: OpenRouter {REMOTE_FALLBACK_MODEL}")
     server.serve_forever()

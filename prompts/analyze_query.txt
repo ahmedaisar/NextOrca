@@ -1,1 +1,3 @@
-Analyze the {project} codebase at data/repos/{project} to answer: {question} Save your answer to data/outputs/{output_file}
+Analyze the {project} codebase at data/repos/{project} to answer: {question}
+
+This is a strictly read-only analysis. Do not create, edit, delete, move, or modify files. Return your complete answer as stdout; the calling script saves it.
