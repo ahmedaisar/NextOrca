@@ -14,7 +14,7 @@ from nextorca.mcp_stdio import (
     MCPStdioClient,
     load_mcp_config,
 )
-from nextorca.tool_registry import ToolRegistry
+from nextorca.tool_registry import ToolExecutionError, ToolRegistry
 
 
 MODERN_SERVER = r'''
@@ -240,3 +240,105 @@ def test_env_passthrough_is_explicit(tmp_path, monkeypatch):
     environment = client._process_environment()
     assert environment["MCP_EXPLICIT_VALUE"] == "visible"
     assert "OPENROUTER_API_KEY" not in environment
+
+
+
+def test_modern_input_required_response_is_rejected(tmp_path):
+    script = MODERN_SERVER.replace(
+        '"resultType": "complete",\n                "tools":',
+        '"resultType": "input_required",\n                "tools":',
+    )
+    client = _client(script, tmp_path, "input-required")
+    with client:
+        with pytest.raises(MCPServerError, match="interactive protocol input"):
+            client.list_tools()
+
+
+def test_remote_tool_schema_validates_nested_arguments(tmp_path):
+    script = MODERN_SERVER.replace(
+        '"properties": {"text": {"type": "string", "minLength": 1}},\n'
+        '                        "required": ["text"],',
+        '"properties": {"nested": {"type": "object", "properties": '
+        '{"count": {"type": "integer", "minimum": 1}}, "required": ["count"]}},\n'
+        '                        "required": ["nested"],',
+    )
+    registry = ToolRegistry()
+    with _client(script, tmp_path, "nested") as client:
+        assert client.register_tools(registry) == 1
+        tool = registry.get("mcp_nested_echo_text")
+        with pytest.raises(ToolExecutionError, match="below its minimum"):
+            registry.prepare(tool, {"nested": {"count": 0}})
+
+
+def test_mcp_request_timeout_terminates_server_process_group(tmp_path):
+    script = r'''
+import json, sys, time
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request.get("method")
+    request_id = request.get("id")
+    if method == "server/discover":
+        result = {
+            "resultType": "complete",
+            "supportedVersions": ["2026-07-28"],
+            "capabilities": {"tools": {}}
+        }
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}) + "\n")
+        sys.stdout.flush()
+    elif method == "tools/list":
+        time.sleep(5)
+'''
+    config = MCPServerConfig(
+        name="slow",
+        command=(sys.executable, "-u", "-c", script),
+        timeout_seconds=0.5,
+    )
+    client = MCPStdioClient(
+        config, workspace_root=tmp_path, sandbox=_TestSandbox(tmp_path)
+    )
+    client.connect()
+    process = client.process
+    assert process is not None and process.poll() is None
+    with pytest.raises(MCPServerError, match="timed out"):
+        client.list_tools()
+    assert process.poll() is not None
+    client.close()
+
+
+def test_mcp_manifest_network_and_writable_grants_are_typed(tmp_path):
+    config_path = tmp_path / "mcp.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "isolated",
+                        "command": ["python3", "server.py"],
+                        "network_access": True,
+                        "writable_paths": ["artifacts"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = load_mcp_config(config_path)[0]
+    assert config.network_access is True
+    assert config.writable_paths == ("artifacts",)
+
+    config_path.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "bad",
+                        "command": ["python3", "server.py"],
+                        "network_access": "yes",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(MCPServerError, match="network_access must be a boolean"):
+        load_mcp_config(config_path)
