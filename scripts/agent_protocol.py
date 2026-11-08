@@ -59,7 +59,7 @@ def openai_to_anthropic_response(oai: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Local provider response is missing choices[0].message") from exc
     text = message.get("content") or ""
     if not isinstance(text, str):
-        raise ValueError("Local provider message content must be a string")
+        raise TypeError("Local provider message content must be a string")
     usage = oai.get("usage") or {}
     content, stop_reason = build_anthropic_content(text)
     return {
