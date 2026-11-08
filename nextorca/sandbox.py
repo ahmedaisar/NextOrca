@@ -31,6 +31,8 @@ class LinuxBubblewrapSandbox:
         writable_paths: Sequence[str] = (),
         bwrap_path: str | None = None,
     ) -> None:
+        # Initialize cleanup state before any validation can raise.
+        self._seccomp_fd: int | None = None
         if not sys.platform.startswith("linux"):
             raise SandboxError(
                 "MCP execution is disabled: OS-level sandboxing is currently supported "
@@ -56,7 +58,6 @@ class LinuxBubblewrapSandbox:
             raise SandboxError("Configured bubblewrap executable is not executable.")
         self.bwrap_path = str(executable.resolve(strict=True))
         self.writable_paths = self._resolve_writable_paths(writable_paths)
-        self._seccomp_fd: int | None = None
         if not self.allow_network:
             self._seccomp_fd = self._create_network_deny_filter()
 
