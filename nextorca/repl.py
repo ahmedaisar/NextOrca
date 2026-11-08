@@ -58,5 +58,5 @@ def run_repl(runtime: AgentRuntime) -> None:
                 print(f"\n{answer}")
         except KeyboardInterrupt:
             print("\nRequest interrupted. The saved session can be continued.")
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             print(f"\nnextorca: {type(exc).__name__}: {exc}", file=sys.stderr)
