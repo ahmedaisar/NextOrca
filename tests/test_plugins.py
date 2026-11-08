@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from nextorca.plugins import build_plugin_tools, discover_plugins
+from nextorca.skills import discover_skills
 from nextorca.tool_registry import ToolRegistry
 from nextorca.workspace import Workspace
 
@@ -136,3 +137,26 @@ def test_plugin_tool_command_placeholders_are_single_argv_values(tmp_path):
     assert prepared is not None
     assert "two words; no shell" in prepared.preview
     assert "two words; no shell" in registry.execute_prepared(prepared)
+
+def test_plugin_skills_join_the_agent_skill_catalog(tmp_path):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    plugin_root = workspace / ".nextorca" / "plugins"
+    plugin_root.mkdir(parents=True)
+    directory = _plugin(plugin_root, "skill-pack", skills=["skills"])
+    skill_dir = directory / "skills" / "workflow"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\\nname: workflow\\ndescription: Plugin workflow\\n---\\n\\nUse the plugin workflow.",
+        encoding="utf-8",
+    )
+
+    plugins, _ = discover_plugins(workspace, home=tmp_path / "home")
+    skills, errors = discover_skills(
+        workspace,
+        home=tmp_path / "home",
+        extra_roots=list(plugins[0].skill_roots),
+    )
+
+    assert not errors
+    assert [skill.name for skill in skills] == ["workflow"]

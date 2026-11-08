@@ -88,6 +88,8 @@ def _validate_tool(tool: Any) -> dict[str, Any]:
         raise ValueError(f"Plugin tool {name!r} placeholders must occupy a complete argv token.")
     if not placeholders.issubset(properties):
         raise ValueError(f"Plugin tool {name!r} uses undeclared command placeholders.")
+    if not set(required).issubset(placeholders):
+        raise ValueError(f"Plugin tool {name!r} must use every required argument in its command.")
     return {
         "name": name,
         "description": description,
