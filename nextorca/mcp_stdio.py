@@ -555,13 +555,26 @@ class MCPStdioClient:
     def _connect(self) -> None:
         self._start_process()
 
-        # Probe the modern stateless era first. Legacy servers commonly return
-        # method-not-found or stay silent; those fall back to initialize.
+        # Probe modern stateless discovery first. Fall back only when the request
+        # itself is unsupported or the server is silent/exits before responding.
         try:
             discovery = self._request(
                 "server/discover",
                 timeout_seconds=min(3.0, self.request_timeout_seconds),
             )
+        except MCPMethodNotFound:
+            # Standard JSON-RPC method-not-found is the legacy compatibility probe.
+            pass
+        except MCPServerError:
+            if self.process is None or self.process.poll() is not None:
+                # Restart after a discovery timeout/exit before attempting the legacy handshake.
+                self._stop_process(force=True)
+                self._start_process()
+            else:
+                raise
+        else:
+            # Validate a received discovery response outside the fallback handler.
+            # Malformed modern responses must fail with their actual validation error.
             if discovery.get("resultType") != "complete":
                 raise MCPServerError("MCP server/discover did not complete protocol discovery.")
             supported = discovery.get("supportedVersions")
@@ -581,30 +594,17 @@ class MCPStdioClient:
                 raise MCPServerError("MCP server/discover returned an invalid cacheScope.")
             if isinstance(ttl_ms, bool) or not isinstance(ttl_ms, int) or ttl_ms < 0:
                 raise MCPServerError("MCP server/discover returned an invalid ttlMs.")
-            if MODERN_PROTOCOL_VERSION in supported:
-                self.protocol_era = "modern"
-                self.protocol_version = MODERN_PROTOCOL_VERSION
-            else:
+            if MODERN_PROTOCOL_VERSION not in supported:
                 raise MCPServerError(
                     f"MCP server '{self.config.name}' has no mutually supported modern protocol version."
                 )
+            self.protocol_era = "modern"
+            self.protocol_version = MODERN_PROTOCOL_VERSION
             self.server_instructions = str(discovery.get("instructions", ""))[:4_000]
             meta = discovery.get("_meta")
             if isinstance(meta, dict) and isinstance(meta.get("io.modelcontextprotocol/serverInfo"), dict):
                 self.server_info = meta["io.modelcontextprotocol/serverInfo"]
             return
-        except MCPMethodNotFound:
-            # Standard JSON-RPC method-not-found is the legacy compatibility probe.
-            pass
-        except MCPServerError:
-            if self.process is None or self.process.poll() is not None:
-                # Restart after discovery timeout/exit before attempting the legacy handshake.
-                self._stop_process(force=True)
-                self._start_process()
-            else:
-                # A malformed or rejected discovery response from a live server is not
-                # evidence that it is a legacy server; fail closed.
-                raise
 
         try:
             result = self._request(
