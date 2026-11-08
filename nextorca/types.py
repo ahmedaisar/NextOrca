@@ -20,6 +20,7 @@ class AssistantTurn:
     content: str = ""
     tool_calls: tuple[ToolCall, ...] = field(default_factory=tuple)
     finish_reason: str | None = None
+    usage: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
