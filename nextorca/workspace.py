@@ -6,6 +6,7 @@ import os
 import stat
 import tempfile
 from pathlib import Path, PureWindowsPath
+from typing import Any
 
 from nextorca.session_store import SQLiteSessionStore
 from nextorca.tool_registry import PreparedToolOperation, ToolExecutionError, ToolRegistry, ToolSpec
