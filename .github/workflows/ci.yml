@@ -19,8 +19,6 @@ jobs:
           bwrap --version
       - run: uv sync --extra dev
       - run: uv run python -c "from importlib.metadata import version; assert version('nextorca') == '0.8.0'"
-      - name: Show Ruff import ordering patch
-        run: uv run ruff check --select I --fix --diff nextorca/mcp_stdio.py || true
       - run: uv run ruff check scripts/agent_protocol.py scripts/generate_claude_settings.py scripts/proxy_security.py nextorca tests evals
       - name: Compile proxy modules
         run: uv run python -m py_compile scripts/proxy.py scripts/proxy_security.py nextorca/*.py
