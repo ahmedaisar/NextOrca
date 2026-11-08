@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import sys
 
+from nextorca.goals import GoalRunner
 from nextorca.runtime import AgentRuntime
 
 HELP = """NextOrca interactive commands:
   /help       Show this help
   /session    Show the current session ID
   /new        Start a fresh conversation
+  /tools      List available tools
+  /mcp        List configured MCP tools
+  /plugins    List loaded plugin tools
+  /goal       /goal <objective> [--verify <command>]
+              /goal status | resume | clear
   /exit       Leave NextOrca
 
 Type a request in natural language to work on the current project.
@@ -44,6 +50,43 @@ def run_repl(runtime: AgentRuntime) -> None:
             runtime.session_id = None
             runtime.last_session_id = None
             print("Started a new conversation on the next prompt.")
+            continue
+        if prompt == "/tools":
+            print("\n".join(runtime.tools.names) or "No tools registered.")
+            continue
+        if prompt == "/mcp":
+            names = [name for name in runtime.tools.names if name.startswith("mcp_")]
+            print("\n".join(names) or "No MCP tools loaded. Start with --allow-mcp-tools.")
+            continue
+        if prompt == "/plugins":
+            names = [name for name in runtime.tools.names if name.startswith("plugin_")]
+            print("\n".join(names) or "No plugin tools loaded.")
+            continue
+        if prompt == "/goal" or prompt.startswith("/goal "):
+            runner = GoalRunner(runtime)
+            argument = prompt[len("/goal"):].strip()
+            if argument == "status":
+                state = runner.status()
+                if state is None:
+                    print("No goal recorded in this session.")
+                else:
+                    print(f"{state.get('status')}: {state.get('objective')} (attempt {state.get('iteration', 0)})")
+                continue
+            if argument == "resume":
+                print(runner.resume())
+                continue
+            if argument == "clear":
+                runner.clear()
+                print("Goal state cleared.")
+                continue
+            objective, separator, verify = argument.partition(" --verify ")
+            if not objective:
+                print("Usage: /goal <objective> [--verify <command>]")
+                continue
+            try:
+                print(runner.run(objective, verify_command=verify.strip() if separator else None))
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"\nnextorca goal: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if prompt.startswith("/"):
             print(f"Unknown command: {prompt.split()[0]}. Type /help.")
