@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+# ruff: isort: off
 import shutil
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ from nextorca.mcp_stdio import (
     load_mcp_config,
 )
 from nextorca.tool_registry import ToolExecutionError, ToolRegistry
+# ruff: isort: on
 
 
 MODERN_SERVER = r'''
