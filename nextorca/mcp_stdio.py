@@ -396,6 +396,7 @@ class MCPStdioClient:
                 bufsize=1,
                 shell=False,
                 start_new_session=True,
+                pass_fds=self.sandbox.pass_fds,
             )
         except (OSError, ValueError, SandboxError) as exc:
             raise MCPServerError(
@@ -818,6 +819,7 @@ class MCPStdioClient:
         if not self._closed:
             self._closed = True
             self._stop_process()
+            self.sandbox.close()
 
     def __enter__(self) -> Self:
         self.connect()
