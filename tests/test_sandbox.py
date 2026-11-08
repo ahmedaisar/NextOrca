@@ -14,7 +14,7 @@ SYSTEM_TEST_PYTHON = "/usr/bin/python3"
 
 def _fake_bwrap(path: Path) -> Path:
     binary = path / "bwrap"
-    binary.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     binary.chmod(0o755)
     return binary
 
@@ -119,7 +119,7 @@ def test_command_and_working_directory_must_be_confined(tmp_path):
             environment={},
         )
     outside_executable = outside / "external-command"
-    outside_executable.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    outside_executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     outside_executable.chmod(0o755)
     with pytest.raises(SandboxError, match="outside the sandbox"):
         sandbox.wrap(
@@ -179,7 +179,7 @@ def test_bubblewrap_runtime_enforces_read_only_workspace(tmp_path):
 def test_workspace_executable_is_rewritten_to_sandbox_path(tmp_path):
     script = tmp_path / "bin" / "inspect"
     script.parent.mkdir()
-    script.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     script.chmod(0o755)
     sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=str(_fake_bwrap(tmp_path)))
     argv, _ = sandbox.wrap(
