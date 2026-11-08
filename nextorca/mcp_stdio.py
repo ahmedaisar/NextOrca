@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+# ruff: isort: off
 import os
 import queue
 import re
@@ -20,6 +21,7 @@ from nextorca.tool_registry import (
     ToolRegistry,
     ToolSpec,
 )
+# ruff: isort: on
 
 
 MODERN_PROTOCOL_VERSION = "2026-07-28"
