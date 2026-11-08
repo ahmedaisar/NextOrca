@@ -1,6 +1,7 @@
 """NextOrca's experimental, local-first agent runtime."""
 
 from nextorca.context import ContextBudget, ContextLimitError
+from nextorca.mcp_stdio import MCPServerConfig, MCPStdioClient, load_mcp_config
 from nextorca.permissions import InteractiveApprovalPolicy
 from nextorca.routing import HybridRouter, RouteDecision, classify_task
 from nextorca.runtime import AgentConfig, AgentRuntime
@@ -14,6 +15,8 @@ __all__ = [
     "ContextBudget",
     "ContextLimitError",
     "HybridRouter",
+    "MCPServerConfig",
+    "MCPStdioClient",
     "InteractiveApprovalPolicy",
     "RouteDecision",
     "SQLiteSessionStore",
@@ -21,4 +24,5 @@ __all__ = [
     "Workspace",
     "build_workspace_tools",
     "classify_task",
+    "load_mcp_config",
 ]
