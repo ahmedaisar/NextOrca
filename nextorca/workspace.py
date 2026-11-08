@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import difflib
 import fnmatch
+import os
+import stat
+import tempfile
 from pathlib import Path, PureWindowsPath
+from typing import Any
 
-from nextorca.tool_registry import ToolExecutionError, ToolRegistry, ToolSpec
+from nextorca.session_store import SQLiteSessionStore
+from nextorca.tool_registry import PreparedToolOperation, ToolExecutionError, ToolRegistry, ToolSpec
 
 
 class WorkspaceError(ValueError):
@@ -19,6 +25,8 @@ class Workspace:
         *,
         max_read_bytes: int = 512_000,
         max_read_chars: int = 24_000,
+        max_write_bytes: int = 512_000,
+        max_diff_chars: int = 12_000,
         max_search_files: int = 500,
         max_search_results: int = 100,
     ) -> None:
@@ -30,6 +38,8 @@ class Workspace:
             raise WorkspaceError("Workspace root must be a directory.")
         self.max_read_bytes = max_read_bytes
         self.max_read_chars = max_read_chars
+        self.max_write_bytes = max_write_bytes
+        self.max_diff_chars = max_diff_chars
         self.max_search_files = max_search_files
         self.max_search_results = max_search_results
 
@@ -167,7 +177,252 @@ class Workspace:
             raise ToolExecutionError("Glob patterns cannot traverse outside the workspace.")
 
 
-def build_workspace_tools(workspace: Workspace) -> ToolRegistry:
+
+    def _current_text(self, path: Path) -> tuple[bool, str]:
+        if not path.exists():
+            return False, ""
+        if not path.is_file():
+            raise ToolExecutionError("Mutation target is not a regular file.")
+        try:
+            if path.stat().st_size > self.max_write_bytes:
+                raise ToolExecutionError("Mutation target exceeds the configured size limit.")
+            return True, path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ToolExecutionError("Only UTF-8 text files can be edited.") from exc
+        except OSError as exc:
+            raise ToolExecutionError("Mutation target could not be read.") from exc
+
+    def _diff(self, path: Path, before: str, after: str, before_exists: bool) -> str:
+        relative = str(path.relative_to(self.root))
+        before_name = relative if before_exists else "/dev/null"
+        diff = "".join(
+            difflib.unified_diff(
+                before.splitlines(keepends=True),
+                after.splitlines(keepends=True),
+                fromfile=before_name,
+                tofile=relative,
+            )
+        )
+        if not diff:
+            return "No changes."
+        if len(diff) > self.max_diff_chars:
+            diff = diff[: self.max_diff_chars] + "\n[diff preview truncated]"
+        return diff
+
+    def _atomic_write(self, path: Path, content: str) -> None:
+        if len(content.encode("utf-8")) > self.max_write_bytes:
+            raise ToolExecutionError("New file content exceeds the configured size limit.")
+        temporary_name: str | None = None
+        descriptor: int | None = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            parent = path.parent.resolve(strict=True)
+            parent.relative_to(self.root)
+            destination = parent / path.name
+            if destination.is_symlink():
+                destination = destination.resolve(strict=True)
+                destination.relative_to(self.root)
+            mode = stat.S_IMODE(destination.stat().st_mode) if destination.exists() else 0o644
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{destination.name}.nextorca-",
+                dir=parent,
+            )
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, mode)
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+                descriptor = None
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_name, destination)
+            temporary_name = None
+            if hasattr(os, "chmod"):
+                os.chmod(destination, mode)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ToolExecutionError("File could not be written safely.") from exc
+        finally:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            if temporary_name is not None:
+                try:
+                    os.unlink(temporary_name)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
+
+    def _apply_change(
+        self,
+        *,
+        path: Path,
+        before_exists: bool,
+        before_content: str,
+        after_content: str,
+        checkpoint_store: SQLiteSessionStore,
+        operation_name: str,
+    ) -> str:
+        current_exists, current_content = self._current_text(path)
+        if current_exists != before_exists or current_content != before_content:
+            raise ToolExecutionError(
+                "File changed after approval preview; generate a new diff and approve again."
+            )
+        if before_exists and before_content == after_content:
+            return f"No changes to {path.relative_to(self.root)}; no checkpoint created."
+
+        self._atomic_write(path, after_content)
+        try:
+            checkpoint_id = checkpoint_store.create_checkpoint(
+                workspace=str(self.root),
+                path=str(path),
+                before_exists=before_exists,
+                before_content=before_content,
+                after_content=after_content,
+            )
+        except Exception as exc:
+            try:
+                if before_exists:
+                    self._atomic_write(path, before_content)
+                elif path.exists():
+                    path.unlink()
+            except Exception as rollback_exc:
+                raise ToolExecutionError(
+                    "Checkpoint creation failed and automatic rollback also failed."
+                ) from rollback_exc
+            raise ToolExecutionError(
+                "Checkpoint creation failed; the file change was rolled back."
+            ) from exc
+
+        relative = str(path.relative_to(self.root))
+        return (
+            f"{operation_name} {relative}. Checkpoint ID: {checkpoint_id}\n"
+            f"{self._diff(path, before_content, after_content, before_exists)}"
+        )
+
+    def prepare_write(
+        self,
+        arguments: dict[str, Any],
+        checkpoint_store: SQLiteSessionStore,
+    ) -> PreparedToolOperation:
+        path = self.resolve(arguments["file_path"], allow_root=False)
+        content = arguments["content"]
+        if len(content.encode("utf-8")) > self.max_write_bytes:
+            raise ToolExecutionError("New file content exceeds the configured size limit.")
+        before_exists, before_content = self._current_text(path)
+        if before_exists and not arguments.get("overwrite", False):
+            raise ToolExecutionError(
+                "File already exists; set overwrite=true to request an approved replacement."
+            )
+        preview = self._diff(path, before_content, content, before_exists)
+        return PreparedToolOperation(
+            preview=preview,
+            execute=lambda: self._apply_change(
+                path=path,
+                before_exists=before_exists,
+                before_content=before_content,
+                after_content=content,
+                checkpoint_store=checkpoint_store,
+                operation_name="Wrote",
+            ),
+        )
+
+    def prepare_edit(
+        self,
+        arguments: dict[str, Any],
+        checkpoint_store: SQLiteSessionStore,
+    ) -> PreparedToolOperation:
+        path = self.resolve(arguments["file_path"], allow_root=False)
+        before_exists, before_content = self._current_text(path)
+        if not before_exists:
+            raise ToolExecutionError("Edit target does not exist.")
+        old_string = arguments["old_string"]
+        new_string = arguments["new_string"]
+        replace_all = arguments.get("replace_all", False)
+        occurrences = before_content.count(old_string)
+        if occurrences == 0:
+            raise ToolExecutionError("Edit target text was not found.")
+        if occurrences > 1 and not replace_all:
+            raise ToolExecutionError(
+                "Edit target text occurs more than once; set replace_all=true or narrow the match."
+            )
+        after_content = (
+            before_content.replace(old_string, new_string)
+            if replace_all
+            else before_content.replace(old_string, new_string, 1)
+        )
+        if len(after_content.encode("utf-8")) > self.max_write_bytes:
+            raise ToolExecutionError("Edited file exceeds the configured size limit.")
+        preview = self._diff(path, before_content, after_content, True)
+        return PreparedToolOperation(
+            preview=preview,
+            execute=lambda: self._apply_change(
+                path=path,
+                before_exists=True,
+                before_content=before_content,
+                after_content=after_content,
+                checkpoint_store=checkpoint_store,
+                operation_name="Edited",
+            ),
+        )
+
+    def undo_checkpoint(
+        self,
+        checkpoint_id: str,
+        checkpoint_store: SQLiteSessionStore,
+    ) -> str:
+        checkpoint = checkpoint_store.get_checkpoint(checkpoint_id)
+        if checkpoint is None:
+            raise ToolExecutionError("Checkpoint was not found.")
+        if checkpoint["workspace"] != str(self.root):
+            raise WorkspaceError("Checkpoint belongs to a different workspace.")
+        if checkpoint["undone_at"] is not None:
+            raise ToolExecutionError("Checkpoint has already been undone.")
+
+        path = self.resolve(checkpoint["path"], allow_root=False)
+        exists, current = self._current_text(path)
+        if not exists or current != checkpoint["after_content"]:
+            raise ToolExecutionError(
+                "File has changed since this checkpoint; refusing to overwrite newer work."
+            )
+
+        if checkpoint["before_exists"]:
+            self._atomic_write(path, checkpoint["before_content"])
+        else:
+            try:
+                path.unlink()
+            except OSError as exc:
+                raise ToolExecutionError("New file could not be removed during undo.") from exc
+
+        try:
+            checkpoint_store.mark_checkpoint_undone(checkpoint_id)
+        except Exception as exc:
+            try:
+                self._atomic_write(path, checkpoint["after_content"])
+            except Exception as rollback_exc:
+                raise ToolExecutionError(
+                    "Undo completed but its state could not be recorded or restored."
+                ) from rollback_exc
+            raise ToolExecutionError(
+                "Undo state could not be recorded; the original change was restored."
+            ) from exc
+
+        return f"Undid checkpoint {checkpoint_id} for {path.relative_to(self.root)}."
+
+    def list_checkpoints(
+        self,
+        checkpoint_store: SQLiteSessionStore,
+    ) -> list[dict[str, Any]]:
+        return checkpoint_store.list_checkpoints(str(self.root))
+
+
+def build_workspace_tools(
+    workspace: Workspace,
+    *,
+    include_mutations: bool = False,
+    checkpoint_store: SQLiteSessionStore | None = None,
+) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
         ToolSpec(
@@ -230,4 +485,47 @@ def build_workspace_tools(workspace: Workspace) -> ToolRegistry:
             ),
         )
     )
+
+    if include_mutations:
+        if checkpoint_store is None:
+            raise ValueError("A persistent checkpoint store is required for write/edit tools.")
+        registry.register(
+            ToolSpec(
+                name="Write",
+                description="Create a UTF-8 text file in the workspace; replacement requires overwrite=true and approval.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "minLength": 1, "maxLength": 4096},
+                        "content": {"type": "string", "maxLength": 512000},
+                        "overwrite": {"type": "boolean"},
+                    },
+                    "required": ["file_path", "content"],
+                    "additionalProperties": False,
+                },
+                handler=lambda _args: "Write must run through the approval pipeline.",
+                read_only=False,
+                prepare_handler=lambda args: workspace.prepare_write(args, checkpoint_store),
+            )
+        )
+        registry.register(
+            ToolSpec(
+                name="Edit",
+                description="Replace exact text in a workspace file; the resulting diff requires approval.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "minLength": 1, "maxLength": 4096},
+                        "old_string": {"type": "string", "minLength": 1, "maxLength": 512000},
+                        "new_string": {"type": "string", "maxLength": 512000},
+                        "replace_all": {"type": "boolean"},
+                    },
+                    "required": ["file_path", "old_string", "new_string"],
+                    "additionalProperties": False,
+                },
+                handler=lambda _args: "Edit must run through the approval pipeline.",
+                read_only=False,
+                prepare_handler=lambda args: workspace.prepare_edit(args, checkpoint_store),
+            )
+        )
     return registry

@@ -1,6 +1,7 @@
 """NextOrca's experimental, local-first agent runtime."""
 
 from nextorca.context import ContextBudget, ContextLimitError
+from nextorca.permissions import InteractiveApprovalPolicy
 from nextorca.runtime import AgentConfig, AgentRuntime
 from nextorca.session_store import SQLiteSessionStore
 from nextorca.tool_registry import ToolRegistry
@@ -11,6 +12,7 @@ __all__ = [
     "AgentRuntime",
     "ContextBudget",
     "ContextLimitError",
+    "InteractiveApprovalPolicy",
     "SQLiteSessionStore",
     "ToolRegistry",
     "Workspace",
