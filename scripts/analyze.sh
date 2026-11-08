@@ -30,6 +30,7 @@ if [ ! -f "$QUERY_FILE" ]; then
   exit 1
 fi
 
+export NEXTORCA_WORKSPACE_ROOT="$REPO_DIR"
 source "$PROJ_DIR/scripts/start_services.sh"
 
 mkdir -p "$OUTPUT_DIR"
