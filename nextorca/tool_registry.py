@@ -14,6 +14,15 @@ class ToolExecutionError(RuntimeError):
 
 
 ToolHandler = Callable[[dict[str, Any]], str]
+PrepareHandler = Callable[[dict[str, Any]], "PreparedToolOperation"]
+
+
+@dataclass(frozen=True)
+class PreparedToolOperation:
+    """A validated, previewable operation whose captured state is applied on approval."""
+
+    preview: str
+    execute: Callable[[], str]
 
 
 @dataclass(frozen=True)
@@ -23,6 +32,7 @@ class ToolSpec:
     parameters: dict[str, Any]
     handler: ToolHandler
     read_only: bool = True
+    prepare_handler: PrepareHandler | None = None
 
     def as_provider_tool(self) -> dict[str, Any]:
         return {
@@ -125,9 +135,33 @@ class ToolRegistry:
     def provider_tools(self) -> list[dict[str, Any]]:
         return [spec.as_provider_tool() for spec in self._tools.values()]
 
+    @staticmethod
+    def prepare(spec: ToolSpec, arguments: dict[str, Any]) -> PreparedToolOperation | None:
+        validate_arguments(spec.parameters, arguments)
+        if spec.prepare_handler is None:
+            return None
+        return spec.prepare_handler(arguments)
+
+    @staticmethod
+    def execute_prepared(prepared: PreparedToolOperation) -> str:
+        try:
+            result = prepared.execute()
+        except ToolExecutionError:
+            raise
+        except Exception as exc:
+            raise ToolExecutionError(
+                f"Prepared tool operation failed: {type(exc).__name__}"
+            ) from exc
+        if not isinstance(result, str):
+            raise ToolExecutionError("Prepared tool operation returned a non-text result.")
+        return result
+
     def execute(self, name: str, arguments: dict[str, Any]) -> str:
         spec = self.get(name)
         validate_arguments(spec.parameters, arguments)
+        if spec.prepare_handler is not None:
+            prepared = spec.prepare_handler(arguments)
+            return self.execute_prepared(prepared)
         try:
             result = spec.handler(arguments)
         except ToolExecutionError:
