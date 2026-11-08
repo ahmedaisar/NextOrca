@@ -149,6 +149,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         ) if args.verbose else None
 
         if args.route_mode == "single":
+            if args.privacy_mode == "local-only":
+                raise ValueError(
+                    "local-only privacy mode requires --route-mode local or auto "
+                    "and a local model endpoint."
+                )
             provider = OpenAICompatibleProvider(args.base_url, api_key=args.api_key)
             runtime_model = args.model
         else:
