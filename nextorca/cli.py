@@ -13,13 +13,14 @@ from nextorca.permissions import InteractiveApprovalPolicy
 from nextorca.routing import HybridRouter
 from nextorca.runtime import AgentConfig, AgentRuntime, ReadOnlyPermissionPolicy
 from nextorca.session_store import SQLiteSessionStore
+from nextorca.shell import build_shell_tool
 from nextorca.workspace import Workspace, build_workspace_tools
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nextorca",
-        description="Local-first coding agent. Read-only by default; file edits require --allow-edits.",
+        description="NextOrca terminal coding agent. Start an interactive session or pass a prompt.",
     )
     parser.add_argument("prompt", nargs="?", help="Task or question for the coding agent.")
     parser.add_argument(
@@ -147,6 +148,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    interactive = args.prompt is None
+    if interactive and not sys.stdin.isatty():
+        parser.error("interactive mode requires a terminal; pass a prompt for one-shot mode")
     mcp_clients: list[MCPStdioClient] = []
     try:
         workspace = Workspace(args.workspace)
@@ -169,7 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             return 0
-        if not args.prompt:
+        if not args.prompt and not interactive:
             parser.error("provide a prompt, --undo-checkpoint, or --list-checkpoints")
 
         route_logger = (
@@ -209,13 +213,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             runtime_model = "hybrid"
 
-        edits_enabled = bool(args.allow_edits)
+        edits_enabled = bool(args.allow_edits or interactive)
         mcp_enabled = bool(args.allow_mcp_tools)
         tools = build_workspace_tools(
             workspace,
             include_mutations=edits_enabled,
             checkpoint_store=session_store if edits_enabled else None,
         )
+        if interactive:
+            tools.register(build_shell_tool(workspace))
         if mcp_enabled:
             if args.mcp_config is None:
                 raise ValueError(
@@ -246,7 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         policy = (
             InteractiveApprovalPolicy()
-            if edits_enabled or mcp_enabled
+            if interactive or edits_enabled or mcp_enabled
             else ReadOnlyPermissionPolicy()
         )
         system_prompt = AgentConfig().system_prompt
@@ -264,7 +270,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "system policy. Only the configured server command receives explicitly "
                 "allowlisted environment variables. MCP processes are OS-sandboxed."
             )
-        system_prompt += " Shell execution is unavailable."
+        if interactive:
+            system_prompt += (
+                " You are running as an interactive terminal coding agent. Use Shell to run "
+                "tests, linters, git and project commands when useful. Shell commands require "
+                "the user to approve the exact command. Use Read/Glob/Grep to inspect code and "
+                "Write/Edit to make focused changes; every edit requires diff approval. "
+                "After changes, run relevant checks and report their actual results."
+            )
+        else:
+            system_prompt += " Shell execution is unavailable in one-shot mode."
         runtime = AgentRuntime(
             provider=provider,
             model=runtime_model,
@@ -272,17 +287,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             permission_policy=policy,
             config=AgentConfig(max_turns=args.max_turns, system_prompt=system_prompt),
             on_event=(
-                lambda event: print(
-                    json.dumps({"type": event.type, **event.data}),
-                    file=sys.stderr,
+                lambda event: (
+                    print(json.dumps({"type": event.type, **event.data}), file=sys.stderr)
+                    if args.verbose
+                    else print(
+                        f"  {event.data.get('tool', event.type)}"
+                        + (f" ({event.data.get('output_chars')} chars)" if event.type == "tool_completed" else ""),
+                        file=sys.stderr,
+                    )
+                    if interactive and event.type in {"tool_started", "tool_completed", "tool_denied", "tool_error"}
+                    else None
                 )
             )
-            if args.verbose
+            if args.verbose or interactive
             else None,
             session_store=session_store,
             workspace_root=workspace.root,
             session_id=args.session_id,
         )
+        if interactive:
+            from nextorca.repl import run_repl
+
+            run_repl(runtime)
+            return 0
+
         answer = runtime.run(args.prompt)
         if runtime.last_session_id:
             print(f"Session ID: {runtime.last_session_id}", file=sys.stderr)
