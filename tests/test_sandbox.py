@@ -170,6 +170,7 @@ Path('/tmp/sandbox-write.txt').write_text('allowed')
         argv,
         cwd=tmp_path,
         env=environment,
+        pass_fds=sandbox.pass_fds,
         capture_output=True,
         text=True,
         timeout=15,
