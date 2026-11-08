@@ -29,6 +29,7 @@ MODERN_PROTOCOL_VERSION = "2026-07-28"
 LEGACY_PROTOCOL_VERSION = "2025-11-25"
 LEGACY_PROTOCOL_VERSIONS = {"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"}
 MAX_MCP_SERVERS = 8
+MAX_CONFIG_BYTES = 64_000
 MAX_MCP_TOOLS_PER_SERVER = 128
 MAX_MESSAGE_CHARS = 1_000_000
 MAX_TOOL_SCHEMA_CHARS = 64_000
@@ -203,8 +204,12 @@ def load_mcp_config(path: Path | str) -> list[MCPServerConfig]:
     """Load a bounded MCP stdio manifest without executing any command."""
     config_path = Path(path).expanduser()
     try:
+        if config_path.stat().st_size > MAX_CONFIG_BYTES:
+            raise MCPServerError("MCP configuration exceeds the 64 KB size limit.")
         payload = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except MCPServerError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise MCPServerError("MCP configuration could not be read as valid JSON.") from exc
 
     if not isinstance(payload, dict) or not isinstance(payload.get("servers"), list):
@@ -482,7 +487,7 @@ class MCPStdioClient:
                     if ignored_messages > 128:
                         raise MCPServerError("MCP server sent too many notifications during a request.")
                     continue
-                if response.get("id") != request_id:
+                if type(response.get("id")) is not int or response["id"] != request_id:
                     ignored_messages += 1
                     if ignored_messages > 128:
                         raise MCPServerError("MCP server returned too many unrelated messages.")
@@ -527,8 +532,22 @@ class MCPStdioClient:
             if discovery.get("resultType") != "complete":
                 raise MCPServerError("MCP server/discover did not complete protocol discovery.")
             supported = discovery.get("supportedVersions")
-            if not isinstance(supported, list):
-                raise MCPServerError("MCP server/discover omitted supportedVersions.")
+            capabilities = discovery.get("capabilities")
+            cache_scope = discovery.get("cacheScope")
+            ttl_ms = discovery.get("ttlMs")
+            if (
+                not isinstance(supported, list)
+                or not supported
+                or len(supported) > 32
+                or not all(isinstance(version, str) and version for version in supported)
+            ):
+                raise MCPServerError("MCP server/discover omitted valid supportedVersions.")
+            if not isinstance(capabilities, dict):
+                raise MCPServerError("MCP server/discover omitted valid capabilities.")
+            if cache_scope not in {"public", "private"}:
+                raise MCPServerError("MCP server/discover returned an invalid cacheScope.")
+            if isinstance(ttl_ms, bool) or not isinstance(ttl_ms, int) or ttl_ms < 0:
+                raise MCPServerError("MCP server/discover returned an invalid ttlMs.")
             if MODERN_PROTOCOL_VERSION in supported:
                 self.protocol_era = "modern"
                 self.protocol_version = MODERN_PROTOCOL_VERSION
