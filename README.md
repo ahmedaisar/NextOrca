@@ -277,20 +277,24 @@ Set `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_CLOUD_BASE_URL`
 
 NextOrca can discover tools from explicitly configured local MCP stdio servers. Configure trusted server processes in a JSON file; commands must be argv arrays (not shell strings). Only a small safe environment allowlist is inherited by default. Add a secret environment variable to `env_passthrough` only when the server genuinely needs it.
 
-Example `mcp-servers.json`:
+Start with the checked-in empty template at `mcp-servers.example.json` and add only servers you explicitly trust:
+
+```bash
+cp mcp-servers.example.json mcp-servers.json
+```
+
+Example server entry:
 
 ```json
 {
-  "servers": [
-    {
-      "name": "my-tools",
-      "command": ["uvx", "my-mcp-server"],
-      "env_passthrough": ["MY_MCP_TOKEN"],
-      "timeout_seconds": 15
-    }
-  ]
+  "name": "my-tools",
+  "command": ["uvx", "my-mcp-server"],
+  "env_passthrough": ["MY_MCP_TOKEN"],
+  "timeout_seconds": 15
 }
 ```
+
+Keep `mcp-servers.json` private when it references secret environment variables or internal tools.
 
 Start the agent with MCP explicitly enabled:
 
