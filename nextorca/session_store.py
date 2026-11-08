@@ -62,6 +62,18 @@ class SQLiteSessionStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_events_session
                     ON events(session_id, event_id);
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    checkpoint_id TEXT PRIMARY KEY,
+                    workspace TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    before_exists INTEGER NOT NULL,
+                    before_content TEXT NOT NULL,
+                    after_content TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    undone_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace
+                    ON checkpoints(workspace, created_at);
                 """
             )
             connection.commit()
@@ -221,3 +233,92 @@ class SQLiteSessionStore:
             ]
         except (TypeError, json.JSONDecodeError) as exc:
             raise SessionStoreError("Session contains an invalid serialized event.") from exc
+
+
+    def create_checkpoint(
+        self,
+        *,
+        workspace: str,
+        path: str,
+        before_exists: bool,
+        before_content: str,
+        after_content: str,
+    ) -> str:
+        if len(before_content.encode("utf-8")) > 512_000 or len(after_content.encode("utf-8")) > 512_000:
+            raise SessionStoreError("Checkpoint content exceeds the 512 KB limit.")
+        checkpoint_id = str(uuid.uuid4())
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO checkpoints(
+                    checkpoint_id, workspace, path, before_exists,
+                    before_content, after_content
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    checkpoint_id,
+                    workspace,
+                    path,
+                    1 if before_exists else 0,
+                    before_content,
+                    after_content,
+                ),
+            )
+            connection.commit()
+            return checkpoint_id
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise SessionStoreError("Workspace checkpoint could not be saved.") from exc
+        finally:
+            connection.close()
+
+    def get_checkpoint(self, checkpoint_id: str) -> dict[str, Any] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT checkpoint_id, workspace, path, before_exists,
+                       before_content, after_content, created_at, undone_at
+                FROM checkpoints WHERE checkpoint_id = ?
+                """,
+                (checkpoint_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+        finally:
+            connection.close()
+
+    def list_checkpoints(self, workspace: str) -> list[dict[str, Any]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT checkpoint_id, path, created_at, undone_at
+                FROM checkpoints WHERE workspace = ?
+                ORDER BY created_at DESC, rowid DESC
+                """,
+                (workspace,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            connection.close()
+
+    def mark_checkpoint_undone(self, checkpoint_id: str) -> None:
+        connection = self._connect()
+        try:
+            cursor = connection.execute(
+                """
+                UPDATE checkpoints SET undone_at = CURRENT_TIMESTAMP
+                WHERE checkpoint_id = ? AND undone_at IS NULL
+                """,
+                (checkpoint_id,),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise SessionStoreError("Checkpoint does not exist or has already been undone.")
+            connection.commit()
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise SessionStoreError("Checkpoint status could not be updated.") from exc
+        finally:
+            connection.close()
