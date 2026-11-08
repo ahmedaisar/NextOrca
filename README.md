@@ -33,6 +33,7 @@
 - 📁 [Project Structure](#-project-structure)
 - ⚠️ [Known Limitations](#️-known-limitations)
 - 🧭 [Independent Agent Runtime](#independent-agent-runtime-experimental)
+- 🔌 [MCP stdio Integrations](#mcp-stdio-integrations-experimental-linux-only)
 - 🔀 [Hybrid Model Routing](#hybrid-model-routing-experimental)
 - 📊 [Local Usage Metrics](#local-usage-and-routing-metrics)
 - 🛠️ [Approved File Edits and Undo](#approved-file-edits-and-undo-experimental)
