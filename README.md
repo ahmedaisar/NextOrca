@@ -1,21 +1,25 @@
 <div align="center">
-  <img src="assets/loco_operator.png" width="55%" alt="LocoOperator" />
+  <img src="assets/loco_operator.png" width="55%" alt="NextOrca and the LocoOperator-4B model" />
 </div>
 
 <br>
+
+# NextOrca
+
+**A local-first coding-agent runtime built on the LocoOperator-4B code-exploration model.**
 
 <div align="center">
 
 [![MODEL](https://img.shields.io/badge/Model-FFB300?style=for-the-badge&logo=huggingface&logoColor=white)](https://huggingface.co/LocoreMind/LocoOperator-4B)
 [![GGUF](https://img.shields.io/badge/GGUF-FF6F00?style=for-the-badge&logo=huggingface&logoColor=white)](https://huggingface.co/LocoreMind/LocoOperator-4B-GGUF)
 [![Blog](https://img.shields.io/badge/Blog-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://locoremind.com/blog/loco-operator)
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/LocoreMind/LocoOperator)
+[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ahmedaisar/NextOrca)
 [![Colab](https://img.shields.io/badge/Colab-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/LocoreMind/LocoOperator/blob/main/LocoOperator_4B.ipynb)
 [![ModelScope](https://img.shields.io/badge/ModelScope-624AFF?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIGZpbGw9IndoaXRlIi8+PC9zdmc+&logoColor=white)](https://modelscope.cn/organization/LocoreMind)
 
 </div>
 
-> **LocoOperator-4B** is a 4B-parameter code exploration agent distilled from Qwen3-Coder-Next. Designed as a local sub agent for Claude Code-style agent loops — fast codebase navigation at zero API cost.
+> **NextOrca** is the name of this fork and its coding-agent runtime. It extends the original **LocoOperator-4B** code-exploration model with a standalone provider-neutral runtime, hybrid local/cloud routing, persistent sessions, optional approval-gated edits, and a Claude Code-compatible proxy. The underlying LocoOperator-4B model and weights remain attributed to LocoreMind; the model links and original benchmark results below refer to that model, not to end-to-end NextOrca performance.
 
 ## 📋 Table of Contents
 
@@ -28,6 +32,10 @@
 - 🔧 [Analysis Pipeline](#-analysis-pipeline)
 - 📁 [Project Structure](#-project-structure)
 - ⚠️ [Known Limitations](#️-known-limitations)
+- 🧭 [Independent Agent Runtime](#independent-agent-runtime-experimental)
+- 🔀 [Hybrid Model Routing](#hybrid-model-routing-experimental)
+- 📊 [Local Usage Metrics](#local-usage-and-routing-metrics)
+- 🛠️ [Approved File Edits and Undo](#approved-file-edits-and-undo-experimental)
 - 📄 [License](#-license)
 - 🙏 [Acknowledgments](#-acknowledgments)
 
@@ -38,7 +46,7 @@
 
 ## 📝 Introduction
 
-LocoOperator-4B is a tool-calling agent model trained via knowledge distillation from **Qwen3-Coder-Next** inference traces. It specializes in multi-turn codebase exploration — reading files, searching code, and navigating project structures within a Claude Code-style agent loop.
+NextOrca is a local-first coding-agent fork built around **LocoOperator-4B**, a tool-calling model trained via knowledge distillation from **Qwen3-Coder-Next** inference traces. The model specializes in multi-turn codebase exploration — reading files, searching code, and navigating project structures. NextOrca adds the runtime, provider adapters, session management, hybrid routing, and guarded file-edit workflow around that model.
 
 <div align="center">
 
@@ -57,7 +65,7 @@ LocoOperator-4B is a tool-calling agent model trained via knowledge distillation
 
 ## ✨ Key Features
 
-- 🔧 **Tool-Calling Agent**: Generates structured `<tool_call>` JSON for Read, Grep, Glob, Bash, Write, Edit, and Task (subagent delegation)
+- 🔧 **Tool-Calling Model**: LocoOperator-4B generates structured `<tool_call>` JSON for Read, Grep, Glob, Bash, Write, Edit, and Task. The NextOrca runtime exposes workspace-scoped Read/Grep/Glob by default; Write/Edit are opt-in and approval-gated, while Bash and Task execution are not enabled.
 - 🎯 **100% JSON Validity**: Every tool call is valid JSON with all required arguments — outperforming the teacher model (87.6%)
 - 🏠 **Local Deployment**: GGUF quantized, runs on Mac Studio via llama.cpp at zero API cost
 - ⚡ **Lightweight Explorer**: 4B parameters, optimized for fast codebase search and navigation
@@ -65,13 +73,13 @@ LocoOperator-4B is a tool-calling agent model trained via knowledge distillation
 
 ## 🏗️ Architecture
 
-LocoOperator-4B operates as a **sub agent (explorer)** within a two-tier agent system:
+NextOrca supports both a standalone agent runtime and a hybrid setup in which LocoOperator-4B serves as a local **codebase explorer** alongside a stronger cloud model:
 
 <div align="center">
   <img src="assets/architecture.png" width="80%" alt="Architecture" />
 </div>
 
-The main agent handles decision-making and code generation while delegating codebase exploration to LocoOperator-4B — keeping API costs low and latency minimal.
+In hybrid mode, NextOrca routes repository exploration and explanation to the local model and sends implementation, debugging, tests, review, and planning tasks to the configured cloud model. Manual route overrides and a local-only privacy mode are available.
 
 ## 📈 Performance
 
@@ -163,7 +171,9 @@ claude -p (sonnet) ──→ proxy (9091) ──→ OpenRouter Qwen3-Coder-Next
 
 The main agent runs as sonnet (cloud), and when it spawns subagents (Task tool) they default to haiku, which the proxy routes to the local 4B model. If the local model hits context limits or exceeds 10 turns, the proxy automatically falls back to OpenRouter.
 
-The proxy binds to loopback, requires the generated local bearer token for API requests, limits request size/concurrency, and streams remote responses incrementally. Local inference is currently non-streaming; local requests that require streaming are escalated to the cloud provider.\n\nThe proxy (`scripts/proxy.py`) handles:
+The proxy binds to loopback, requires the generated local bearer token for API requests, limits request size/concurrency, and streams remote responses incrementally. Local inference is currently non-streaming; local requests that require streaming are escalated to the cloud provider.
+
+The proxy (`scripts/proxy.py`) handles:
 - Anthropic Messages API ↔ OpenAI Chat Completions format conversion for the local model
 - Parsing `<tool_call>` text output from the local model back into Anthropic tool_use blocks
 - Automatic fallback to OpenRouter on context overflow
@@ -172,8 +182,8 @@ The proxy binds to loopback, requires the generated local bearer token for API r
 
 ```bash
 # Clone the repository
-git clone https://github.com/LocoreMind/LocoOperator.git
-cd LocoOperator
+git clone https://github.com/ahmedaisar/NextOrca.git
+cd NextOrca
 
 # Install Python dependencies
 uv sync
@@ -271,7 +281,18 @@ Routing controls:
 - `--privacy-mode local-only`: never send prompts/tool context to a cloud provider; use with `--route-mode local` or `auto`.
 - `--route-mode single`: preserve the original one-provider behavior and `--base-url`/`--model` options.
 
-Set `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_LOCAL_API_KEY` and `NEXTORCA_CLOUD_API_KEY` to persist provider settings. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The router currently uses a deterministic request classifier, not learned confidence scoring; its decisions are visible and manually overridable.
+Set `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_LOCAL_API_KEY` and `NEXTORCA_CLOUD_API_KEY` to persist provider settings. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The router currently uses a deterministic request classifier, not learned confidence scoring; its decisions are visible and manually overridable. The versioned classification corpus is checked in at `evals/routing_cases.json` and evaluated by `uv run python evals/evaluate_routing.py --fail-under 0.95`.
+
+### Local usage and routing metrics
+
+Each model attempt records latency, normalized input/output token usage, success/failure, provider/model and the routing decision in the local SQLite session database. Nothing is sent to an analytics service. View the workspace totals, or narrow the report to one resumed session:
+
+```bash
+uv run nextorca --workspace ./my-repo --session-stats
+uv run nextorca --workspace ./my-repo --session-id SESSION_ID --session-stats
+```
+
+Provider token counts are reported when the endpoint supplies usage metadata. Cost is intentionally not estimated yet because provider pricing and account-specific discounts need an explicit price configuration; token counts are not a substitute for billing data.
 
 ## Approved File Edits and Undo (experimental)
 
@@ -290,12 +311,12 @@ uv run nextorca --workspace ./my-repo --undo-checkpoint CHECKPOINT_ID
 
 Every approved mutation creates a checkpoint in the local SQLite session database. The tool output returns its checkpoint ID. Undo refuses if the target file has changed since the checkpoint, so newer work is not overwritten. The `--allow-edits` option exposes only `Write` and `Edit`; it does not enable Bash, arbitrary commands, or unrestricted filesystem access.
 
-**Current boundary:** the independent runtime is an experimental preview. Its built-in tools are workspace-confined; unknown tool names and invalid arguments are rejected; execution defaults to a read-only permission policy. File mutations are opt-in through `--allow-edits`, require interactive diff approval and create reversible local checkpoints. It currently uses non-streaming OpenAI Chat Completions-compatible requests and does not include a general-purpose shell sandbox, MCP extensions or a GUI. The existing hybrid proxy remains available for the LocoOperator sub-agent integration.
+**Current boundary:** the independent runtime is an experimental preview. Its built-in tools are workspace-confined; unknown tool names and invalid arguments are rejected; execution defaults to a read-only permission policy. File mutations are opt-in through `--allow-edits`, require interactive diff approval and create reversible local checkpoints. It currently uses non-streaming OpenAI Chat Completions-compatible requests and does not include a general-purpose shell sandbox, MCP extensions or a GUI. The existing hybrid proxy remains available for integrating the LocoOperator-4B explorer model with Claude Code.
 
 ## 📁 Project Structure
 
 ```
-LocoOperator/
+NextOrca/
 ├── .env.example                         # OpenRouter key template
 ├── pyproject.toml
 ├── models/LocoOperator-4B-GGUF/

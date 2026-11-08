@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import Any, Protocol
 
 from nextorca.context import ContextBudget, ContextLimitError
 from nextorca.provider import ChatProvider, ProviderError
-from nextorca.session_store import SQLiteSessionStore
+from nextorca.session_store import SessionStoreError, SQLiteSessionStore
 from nextorca.tool_registry import (
     ToolExecutionError,
     ToolRegistry,
@@ -214,6 +215,54 @@ class AgentRuntime:
         )
         return identifier, messages
 
+
+    def _record_model_metrics(
+        self,
+        *,
+        session_id: str | None,
+        turn: int,
+        started_at: float,
+        status: str,
+        response: AssistantTurn | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        metrics: dict[str, Any] = {
+            "turn": turn,
+            "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "status": status,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "provider": type(self.provider).__name__,
+            "model": self.model,
+        }
+        if response is not None:
+            usage = response.usage or {}
+            metrics["input_tokens"] = int(usage.get("input_tokens", 0))
+            metrics["output_tokens"] = int(usage.get("output_tokens", 0))
+        if error_type:
+            metrics["error_type"] = error_type
+
+        decision = getattr(self.provider, "last_decision", None)
+        if decision is not None:
+            route = decision.as_dict() if callable(getattr(decision, "as_dict", None)) else None
+            if route is not None:
+                metrics["route"] = route
+                metrics["provider"] = route.get("provider", metrics["provider"])
+                metrics["model"] = route.get("model", metrics["model"])
+                metrics["task"] = route.get("task")
+
+        self._emit("model_metrics", **metrics)
+        if session_id and self.session_store is not None:
+            try:
+                self.session_store.append_event(
+                    session_id,
+                    "model_metrics",
+                    metrics,
+                )
+            except SessionStoreError:
+                # Telemetry persistence must not discard a valid model response.
+                self._emit("metrics_persist_failed", turn=turn)
+
     def run(self, prompt: str, *, session_id: str | None = None) -> str:
         if not prompt or not prompt.strip():
             raise ValueError("A non-empty prompt is required.")
@@ -242,19 +291,49 @@ class AgentRuntime:
                     )
 
             self._emit("model_turn_started", turn=turn_index + 1)
+            provider_started_at = time.perf_counter()
             try:
                 response = self.provider.complete(
                     model=self.model,
                     messages=provider_messages,
                     tools=schemas,
                 )
-            except ProviderError:
+            except ProviderError as exc:
+                self._record_model_metrics(
+                    session_id=active_session_id,
+                    turn=turn_index + 1,
+                    started_at=provider_started_at,
+                    status="error",
+                    error_type=type(exc).__name__,
+                )
                 raise
             except Exception as exc:
+                self._record_model_metrics(
+                    session_id=active_session_id,
+                    turn=turn_index + 1,
+                    started_at=provider_started_at,
+                    status="error",
+                    error_type=type(exc).__name__,
+                )
                 raise ProviderError("Model provider request failed.") from exc
 
             if not isinstance(response, AssistantTurn):
+                self._record_model_metrics(
+                    session_id=active_session_id,
+                    turn=turn_index + 1,
+                    started_at=provider_started_at,
+                    status="invalid_response",
+                    error_type="InvalidAssistantTurn",
+                )
                 raise AgentRuntimeError("Provider returned an invalid normalized response.")
+
+            self._record_model_metrics(
+                session_id=active_session_id,
+                turn=turn_index + 1,
+                started_at=provider_started_at,
+                status="success",
+                response=response,
+            )
             assistant_message = self._assistant_message(response)
             self._append_message(messages, active_session_id, assistant_message)
             self._emit(

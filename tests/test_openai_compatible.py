@@ -35,7 +35,8 @@ def test_openai_compatible_provider_parses_text_and_tool_calls():
                             ],
                         },
                     }
-                ]
+                ],
+                "usage": {"prompt_tokens": 31, "completion_tokens": 9},
             },
         )
 
@@ -57,6 +58,7 @@ def test_openai_compatible_provider_parses_text_and_tool_calls():
     assert result.content == "Searching"
     assert result.tool_calls[0].name == "Read"
     assert result.tool_calls[0].arguments == {"file_path": "README.md"}
+    assert result.usage == {"input_tokens": 31, "output_tokens": 9}
 
 
 def test_provider_rejects_non_object_tool_arguments():

@@ -104,8 +104,22 @@ class OpenAICompatibleProvider:
             except (KeyError, TypeError, json.JSONDecodeError) as exc:
                 raise ProviderError("Model provider returned an invalid tool call.") from exc
 
+        raw_usage = payload.get("usage") or {}
+        usage: dict[str, int] = {}
+        if isinstance(raw_usage, dict):
+            for target, candidates in {
+                "input_tokens": ("prompt_tokens", "input_tokens"),
+                "output_tokens": ("completion_tokens", "output_tokens"),
+            }.items():
+                for candidate in candidates:
+                    value = raw_usage.get(candidate)
+                    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                        usage[target] = value
+                        break
+
         return AssistantTurn(
             content=content,
             tool_calls=tuple(calls),
             finish_reason=choice.get("finish_reason"),
+            usage=usage,
         )

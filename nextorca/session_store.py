@@ -322,3 +322,93 @@ class SQLiteSessionStore:
             raise SessionStoreError("Checkpoint status could not be updated.") from exc
         finally:
             connection.close()
+
+
+    def metrics_summary(
+        self,
+        *,
+        workspace: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Aggregate local model metrics without sending telemetry off-device."""
+        filters = ["e.event_type = ?"]
+        parameters: list[Any] = ["model_metrics"]
+        if workspace is not None:
+            filters.append("s.workspace = ?")
+            parameters.append(workspace)
+        if session_id is not None:
+            filters.append("s.session_id = ?")
+            parameters.append(session_id)
+        query = (
+            "SELECT s.session_id, e.event_json FROM events e "
+            "JOIN sessions s ON s.session_id = e.session_id "
+            "WHERE " + " AND ".join(filters) + " ORDER BY e.event_id"
+        )
+
+        connection = self._connect()
+        try:
+            rows = connection.execute(query, parameters).fetchall()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Model metrics could not be loaded.") from exc
+        finally:
+            connection.close()
+
+        summary: dict[str, Any] = {
+            "request_count": 0,
+            "success_count": 0,
+            "failure_count": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_latency_ms": 0.0,
+            "average_latency_ms": 0.0,
+            "fallback_count": 0,
+            "sessions": 0,
+            "by_provider": {},
+            "by_task": {},
+        }
+        session_ids: set[str] = set()
+        for row in rows:
+            try:
+                metrics = json.loads(row["event_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise SessionStoreError("Stored model metrics are invalid JSON.") from exc
+            if not isinstance(metrics, dict):
+                raise SessionStoreError("Stored model metrics have an invalid shape.")
+
+            summary["request_count"] += 1
+            session_ids.add(row["session_id"])
+            if metrics.get("status") == "success":
+                summary["success_count"] += 1
+            else:
+                summary["failure_count"] += 1
+            summary["input_tokens"] += max(0, int(metrics.get("input_tokens", 0) or 0))
+            summary["output_tokens"] += max(0, int(metrics.get("output_tokens", 0) or 0))
+            latency = max(0.0, float(metrics.get("latency_ms", 0.0) or 0.0))
+            summary["total_latency_ms"] += latency
+
+            provider = str(metrics.get("provider", "unknown"))
+            provider_summary = summary["by_provider"].setdefault(
+                provider,
+                {"requests": 0, "input_tokens": 0, "output_tokens": 0, "latency_ms": 0.0},
+            )
+            provider_summary["requests"] += 1
+            provider_summary["input_tokens"] += max(0, int(metrics.get("input_tokens", 0) or 0))
+            provider_summary["output_tokens"] += max(0, int(metrics.get("output_tokens", 0) or 0))
+            provider_summary["latency_ms"] += latency
+
+            task = metrics.get("task")
+            if task:
+                summary["by_task"][str(task)] = summary["by_task"].get(str(task), 0) + 1
+            route = metrics.get("route")
+            if isinstance(route, dict) and route.get("fallback_from"):
+                summary["fallback_count"] += 1
+
+        summary["sessions"] = len(session_ids)
+        if summary["request_count"]:
+            summary["average_latency_ms"] = round(
+                summary["total_latency_ms"] / summary["request_count"], 2
+            )
+        summary["total_latency_ms"] = round(summary["total_latency_ms"], 2)
+        for provider_summary in summary["by_provider"].values():
+            provider_summary["latency_ms"] = round(provider_summary["latency_ms"], 2)
+        return summary
