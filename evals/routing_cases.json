@@ -1,0 +1,114 @@
+[
+  {
+    "prompt": "List the top-level directories in this repository.",
+    "expected": "explore"
+  },
+  {
+    "prompt": "Find the module that loads environment variables.",
+    "expected": "explore"
+  },
+  {
+    "prompt": "Map the package structure for the CLI.",
+    "expected": "explore"
+  },
+  {
+    "prompt": "Locate where HTTP requests are constructed.",
+    "expected": "explore"
+  },
+  {
+    "prompt": "Explain how retry backoff is calculated.",
+    "expected": "explain"
+  },
+  {
+    "prompt": "Describe how the session database is initialized.",
+    "expected": "explain"
+  },
+  {
+    "prompt": "How does the config loader locate YAML files?",
+    "expected": "explain"
+  },
+  {
+    "prompt": "Where is provider error handling implemented?",
+    "expected": "explain"
+  },
+  {
+    "prompt": "Implement pagination for the listing endpoint.",
+    "expected": "edit"
+  },
+  {
+    "prompt": "Add support for TOML configuration files.",
+    "expected": "edit"
+  },
+  {
+    "prompt": "Refactor the token refresh logic.",
+    "expected": "edit"
+  },
+  {
+    "prompt": "Change the default request timeout to ten seconds.",
+    "expected": "edit"
+  },
+  {
+    "prompt": "Fix the bug that drops empty messages.",
+    "expected": "debug"
+  },
+  {
+    "prompt": "Debug intermittent login failures.",
+    "expected": "debug"
+  },
+  {
+    "prompt": "Investigate this traceback from the local inference server.",
+    "expected": "debug"
+  },
+  {
+    "prompt": "Debug stale cache values after successful updates.",
+    "expected": "debug"
+  },
+  {
+    "prompt": "Review the diff for security risks.",
+    "expected": "review"
+  },
+  {
+    "prompt": "Audit the parser for injection vulnerabilities.",
+    "expected": "review"
+  },
+  {
+    "prompt": "Perform a code review of the authentication module.",
+    "expected": "review"
+  },
+  {
+    "prompt": "Check the code for a vulnerability in path resolution.",
+    "expected": "review"
+  },
+  {
+    "prompt": "Plan the migration from SQLite to Postgres.",
+    "expected": "plan"
+  },
+  {
+    "prompt": "Design an architecture for concurrent agent sessions.",
+    "expected": "plan"
+  },
+  {
+    "prompt": "Plan the rollout of multi-agent sessions.",
+    "expected": "plan"
+  },
+  {
+    "prompt": "Design a provider abstraction for additional transports.",
+    "expected": "plan"
+  },
+  {
+    "prompt": "Run pytest for the whole project.",
+    "expected": "test"
+  },
+  {
+    "prompt": "Add unit tests for local tool permissions.",
+    "expected": "test"
+  },
+  {
+    "prompt": "The failing tests need a focused test run.",
+    "expected": "test"
+  },
+  {
+    "prompt": "Run the unit test suite for the provider adapter.",
+    "expected": "test"
+  }
+]
