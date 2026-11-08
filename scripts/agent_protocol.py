@@ -24,7 +24,6 @@ def parse_tool_calls(text: str) -> tuple[str, list[dict[str, Any]]]:
             raise ToolCallParseError(
                 f"Malformed JSON in tool_call block at character {exc.pos}"
             ) from exc
-
         if not isinstance(payload, dict):
             raise ToolCallParseError("tool_call payload must be a JSON object")
         name = payload.get("name")
@@ -33,19 +32,15 @@ def parse_tool_calls(text: str) -> tuple[str, list[dict[str, Any]]]:
             raise ToolCallParseError("tool_call payload requires a non-empty string name")
         if not isinstance(arguments, dict):
             raise ToolCallParseError("tool_call arguments must be a JSON object")
-
-        tool_uses.append(
-            {
-                "type": "tool_use",
-                "id": f"toolu_{uuid.uuid4().hex[:24]}",
-                "name": name,
-                "input": arguments,
-            }
-        )
+        tool_uses.append({
+            "type": "tool_use",
+            "id": f"toolu_{uuid.uuid4().hex[:24]}",
+            "name": name,
+            "input": arguments,
+        })
         return ""
 
-    remaining = _TOOL_CALL_PATTERN.sub(replace, text).strip()
-    return remaining, tool_uses
+    return _TOOL_CALL_PATTERN.sub(replace, text).strip(), tool_uses
 
 
 def build_anthropic_content(text: str) -> tuple[list[dict[str, Any]], str]:
