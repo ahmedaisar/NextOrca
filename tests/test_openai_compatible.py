@@ -35,7 +35,8 @@ def test_openai_compatible_provider_parses_text_and_tool_calls():
                             ],
                         },
                     }
-                ]
+                ],
+                "usage": {"prompt_tokens": 31, "completion_tokens": 9},
             },
         )
 
