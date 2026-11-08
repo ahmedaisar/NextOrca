@@ -77,27 +77,28 @@ class LinuxBubblewrapSandbox:
             )
         audit_arch, syscall_socket, syscall_socketpair = resolved
         instructions = [
-            (0x20, 0, 0, 4),  # Load seccomp_data.arch.
-            (0x15, 1, 0, audit_arch),  # Kill processes using a different ABI.
-            (0x06, 0, 0, 0x80000000),  # SECCOMP_RET_KILL_PROCESS.
-            (0x20, 0, 0, 0),  # Load seccomp_data.nr.
-            (0x45, 0, 1, 0x40000000),  # Reject x32 ABI syscalls on x86-64.
+            (0x20, 0, 0, 4),
+            (0x15, 1, 0, audit_arch),
             (0x06, 0, 0, 0x80000000),
             (0x20, 0, 0, 0),
-            (0x15, 0, 3, syscall_socket),  # socket(domain, ...).
-            (0x20, 0, 0, 16),  # Load socket domain.
-            (0x15, 1, 0, 1),  # Allow AF_UNIX only.
-            (0x06, 0, 0, 0x00050000 | errno.EPERM),
+            (0x45, 0, 1, 0x40000000),
+            (0x06, 0, 0, 0x80000000),
             (0x20, 0, 0, 0),
-            (0x15, 0, 3, syscall_socketpair),  # socketpair(domain, ...).
+            (0x15, 0, 3, syscall_socket),
             (0x20, 0, 0, 16),
-            (0x15, 1, 0, 1),  # Allow AF_UNIX only.
+            (0x15, 1, 0, 1),
             (0x06, 0, 0, 0x00050000 | errno.EPERM),
             (0x20, 0, 0, 0),
-            (0x15, 0, 1, 425),  # Block io_uring_setup (which can submit socket ops).
+            (0x15, 0, 3, syscall_socketpair),
+            (0x20, 0, 0, 16),
+            (0x15, 1, 0, 1),
             (0x06, 0, 0, 0x00050000 | errno.EPERM),
-            (0x06, 0, 0, 0x7FFF0000),  # SECCOMP_RET_ALLOW.
+            (0x20, 0, 0, 0),
+            (0x15, 0, 1, 425),
+            (0x06, 0, 0, 0x00050000 | errno.EPERM),
+            (0x06, 0, 0, 0x7FFF0000),
         ]
+        fd = None
         try:
             fd = os.memfd_create(
                 "nextorca-network-deny",
@@ -108,10 +109,11 @@ class LinuxBubblewrapSandbox:
             os.lseek(fd, 0, os.SEEK_SET)
             return fd
         except (OSError, AttributeError) as exc:
-            try:
-                os.close(fd)
-            except (UnboundLocalError, OSError):
-                pass
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
             raise SandboxError("Could not create the required network-deny seccomp filter.") from exc
 
     @property
@@ -215,7 +217,6 @@ class LinuxBubblewrapSandbox:
 
     @staticmethod
     def _add_system_mounts(argv: list[str]) -> None:
-        # Mount /usr first; merged-/usr symlinks commonly point into this tree.
         for value in ("/usr", "/bin", "/sbin", "/lib", "/lib64"):
             path = Path(value)
             if not path.exists() and not path.is_symlink():
@@ -262,7 +263,6 @@ class LinuxBubblewrapSandbox:
             "--die-with-parent",
             "--new-session",
             "--unshare-all",
-            "--share-net",
             "--cap-drop", "ALL",
             "--size", str(self.MAX_TMP_BYTES),
             "--tmpfs", "/tmp",
@@ -271,6 +271,9 @@ class LinuxBubblewrapSandbox:
             "--dir", "/tmp/nextorca-home",
             "--dir", "/workspace",
         ]
+        if self.allow_network:
+            # Sharing the host network is an explicit per-server opt-in.
+            argv.append("--share-net")
         if self._seccomp_fd is not None:
             try:
                 os.lseek(self._seccomp_fd, 0, os.SEEK_SET)
