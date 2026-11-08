@@ -68,6 +68,8 @@ def _resolve_workspace_path(
 ) -> str:
     if not value or "\\x00" in value:
         raise ToolCallParseError(f"{field_name} must be a non-empty, valid path.")
+    if _has_parent_component(value):
+        raise ToolCallParseError(f"{field_name} cannot traverse outside the workspace.")
     supplied = Path(value).expanduser()
     if PureWindowsPath(value).is_absolute() and not supplied.is_absolute():
         raise ToolCallParseError(f"{field_name} must be within the configured workspace.")
