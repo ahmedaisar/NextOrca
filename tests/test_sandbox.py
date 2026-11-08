@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -139,3 +141,34 @@ def test_reserved_or_dynamic_loader_environment_cannot_be_overridden(tmp_path):
             working_directory=tmp_path,
             environment={"LD_PRELOAD": "/tmp/evil.so"},
         )
+
+
+def test_bubblewrap_runtime_enforces_read_only_workspace(tmp_path):
+    bwrap = shutil.which("bwrap")
+    python = Path("/usr/bin/python3")
+    if not bwrap or not python.is_file():
+        pytest.skip("bubblewrap and the system Python runtime are required for this smoke test.")
+    sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=bwrap)
+    code = (
+        "from pathlib import Path; "
+        "p=Path('/workspace/blocked.txt'); "
+        "\ntry:\n p.write_text('not allowed')\nexcept OSError:\n print('workspace-read-only')\n"
+        "else:\n raise SystemExit('workspace unexpectedly writable')\n"
+        "Path('/tmp/sandbox-write.txt').write_text('allowed')\n"
+    )
+    argv, environment = sandbox.wrap(
+        [str(python), "-c", code],
+        working_directory=tmp_path,
+        environment={},
+    )
+    completed = subprocess.run(
+        argv,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "workspace-read-only" in completed.stdout
