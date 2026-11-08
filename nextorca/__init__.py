@@ -2,6 +2,7 @@
 
 from nextorca.context import ContextBudget, ContextLimitError
 from nextorca.permissions import InteractiveApprovalPolicy
+from nextorca.routing import HybridRouter, RouteDecision, classify_task
 from nextorca.runtime import AgentConfig, AgentRuntime
 from nextorca.session_store import SQLiteSessionStore
 from nextorca.tool_registry import ToolRegistry
@@ -13,6 +14,9 @@ __all__ = [
     "ContextBudget",
     "ContextLimitError",
     "InteractiveApprovalPolicy",
+    "HybridRouter",
+    "RouteDecision",
+    "classify_task",
     "SQLiteSessionStore",
     "ToolRegistry",
     "Workspace",
