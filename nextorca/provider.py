@@ -6,7 +6,11 @@ from nextorca.types import AssistantTurn
 
 
 class ProviderError(RuntimeError):
-    """A model provider could not complete a request."""
+    """A model provider returned an invalid request or response."""
+
+
+class ProviderUnavailableError(ProviderError):
+    """A provider is temporarily unavailable and another route may be attempted."""
 
 
 class ChatProvider(Protocol):
