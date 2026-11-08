@@ -4,8 +4,8 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.runtime import AgentConfig, AgentRuntime
