@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "git-helper",
+  "description": "Small git workflow helpers and a pre-commit review skill.",
+  "skills": ["skills"],
+  "tools": [
+    {
+      "name": "status",
+      "description": "Show the short git status for the current project.",
+      "command": ["git", "status", "--short"],
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "timeout_seconds": 30
+    }
+  ]
+}

@@ -76,11 +76,13 @@ def discover_skills(
     workspace_root: Path | str,
     *,
     home: Path | str | None = None,
+    extra_roots: tuple[Path, ...] | list[Path] = (),
 ) -> tuple[list[Skill], list[str]]:
     """Discover Agent Skills in project and user locations, with project-first precedence."""
     workspace = Path(workspace_root).expanduser().resolve(strict=True)
     user_home = Path(home).expanduser() if home is not None else Path.home()
     roots = [workspace / relative for relative in SKILL_LOCATIONS]
+    roots.extend(Path(root) for root in extra_roots)
     roots.append(user_home / ".nextorca" / "skills")
 
     found: dict[str, Skill] = {}

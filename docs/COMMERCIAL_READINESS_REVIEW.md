@@ -4,6 +4,7 @@
 **Baseline:** main @ a9b19e15f7e9ebc64b91367035b5b98f4d308401  
 **Review date:** 2026-11-08  
 **Purpose:** Build a capable, native-feeling terminal coding agent for the maintainer's own projects. This is a product direction and implementation plan, not a commercial-readiness assessment.
+**Implementation status:** Phase 1 (native terminal agent) and Phase 2 (Agent Skills) are merged. Phase 3 (local plugins) is in review.
 
 ## Product direction
 
@@ -80,7 +81,6 @@ Each phase is a separate sequential pull request. A phase is merged only after i
 **Acceptance:** Existing compatible Agent Skills can be copied into a supported folder and discovered; a selected skill's instructions become available to the model; malformed or escaping skill paths are rejected.
 
 ### Phase 3 — Plugin system
-
 **Goal:** Support installable, manageable local extensions without allowing plugins to bypass the tool policy.
 
 - Define a small versioned plugin manifest.
