@@ -189,6 +189,10 @@ class MCPServerError(RuntimeError):
     """An MCP server or its stdio protocol failed."""
 
 
+class MCPMethodNotFound(MCPServerError):
+    """The server does not implement a requested JSON-RPC method."""
+
+
 @dataclass(frozen=True)
 class MCPServerConfig:
     name: str
@@ -498,10 +502,13 @@ class MCPStdioClient:
                         code = error.get("code")
                         message = str(error.get("message", "MCP request failed"))
                         data = error.get("data")
-                        raise MCPServerError(
+                        error_text = (
                             f"MCP {method} failed ({code}): {message}; "
                             f"data={json.dumps(data, ensure_ascii=False)[:2000]}"
                         )
+                        if code == -32601:
+                            raise MCPMethodNotFound(error_text)
+                        raise MCPServerError(error_text)
                     raise MCPServerError(f"MCP {method} returned a malformed error.")
                 result = response.get("result")
                 if not isinstance(result, dict):
@@ -560,11 +567,18 @@ class MCPStdioClient:
             if isinstance(meta, dict) and isinstance(meta.get("io.modelcontextprotocol/serverInfo"), dict):
                 self.server_info = meta["io.modelcontextprotocol/serverInfo"]
             return
+        except MCPMethodNotFound:
+            # Standard JSON-RPC method-not-found is the legacy compatibility probe.
+            pass
         except MCPServerError:
             if self.process is None or self.process.poll() is not None:
-                # Restart after a discovery timeout/exit; some legacy servers exit on unknown methods.
+                # Restart after discovery timeout/exit before attempting the legacy handshake.
                 self._stop_process(force=True)
                 self._start_process()
+            else:
+                # A malformed or rejected discovery response from a live server is not
+                # evidence that it is a legacy server; fail closed.
+                raise
 
         try:
             result = self._request(
