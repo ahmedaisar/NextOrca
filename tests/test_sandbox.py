@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -10,9 +9,12 @@ import pytest
 from nextorca.sandbox import LinuxBubblewrapSandbox, SandboxError
 
 
+SYSTEM_TEST_PYTHON = "/usr/bin/python3"
+
+
 def _fake_bwrap(path: Path) -> Path:
     binary = path / "bwrap"
-    binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    binary.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
     binary.chmod(0o755)
     return binary
 
@@ -32,7 +34,7 @@ def test_missing_bubblewrap_fails_closed(tmp_path, monkeypatch):
 def test_default_sandbox_has_no_network_and_workspace_is_read_only(tmp_path):
     sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=str(_fake_bwrap(tmp_path)))
     argv, outer_env = sandbox.wrap(
-        [sys.executable, "-c", "print('hello')"],
+        [SYSTEM_TEST_PYTHON, "-c", "print('hello')"],
         working_directory=tmp_path,
         environment={},
     )
@@ -51,7 +53,7 @@ def test_network_access_is_explicit_and_mounts_resolver_inputs(tmp_path):
         tmp_path, allow_network=True, bwrap_path=str(_fake_bwrap(tmp_path))
     )
     argv, _ = sandbox.wrap(
-        [sys.executable, "-c", "pass"],
+        [SYSTEM_TEST_PYTHON, "-c", "pass"],
         working_directory=tmp_path,
         environment={},
     )
@@ -69,7 +71,7 @@ def test_only_existing_confined_directories_can_be_writable(tmp_path):
         bwrap_path=str(_fake_bwrap(tmp_path)),
     )
     argv, _ = sandbox.wrap(
-        [sys.executable, "-c", "pass"],
+        [SYSTEM_TEST_PYTHON, "-c", "pass"],
         working_directory=tmp_path,
         environment={},
     )
@@ -112,12 +114,12 @@ def test_command_and_working_directory_must_be_confined(tmp_path):
     outside = tmp_path.parent
     with pytest.raises(SandboxError, match="working directory escapes"):
         sandbox.wrap(
-            [sys.executable, "-c", "pass"],
+            [SYSTEM_TEST_PYTHON, "-c", "pass"],
             working_directory=outside,
             environment={},
         )
     outside_executable = outside / "external-command"
-    outside_executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    outside_executable.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
     outside_executable.chmod(0o755)
     with pytest.raises(SandboxError, match="outside the sandbox"):
         sandbox.wrap(
@@ -131,13 +133,13 @@ def test_reserved_or_dynamic_loader_environment_cannot_be_overridden(tmp_path):
     sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=str(_fake_bwrap(tmp_path)))
     with pytest.raises(SandboxError, match="cannot override reserved"):
         sandbox.wrap(
-            [sys.executable],
+            [SYSTEM_TEST_PYTHON],
             working_directory=tmp_path,
             environment={"PATH": "/tmp/evil"},
         )
     with pytest.raises(SandboxError, match="not permitted"):
         sandbox.wrap(
-            [sys.executable],
+            [SYSTEM_TEST_PYTHON],
             working_directory=tmp_path,
             environment={"LD_PRELOAD": "/tmp/evil.so"},
         )
@@ -145,16 +147,16 @@ def test_reserved_or_dynamic_loader_environment_cannot_be_overridden(tmp_path):
 
 def test_bubblewrap_runtime_enforces_read_only_workspace(tmp_path):
     bwrap = shutil.which("bwrap")
-    python = Path("/usr/bin/python3")
+    python = Path(SYSTEM_TEST_PYTHON)
     if not bwrap or not python.is_file():
         pytest.skip("bubblewrap and the system Python runtime are required for this smoke test.")
     sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=bwrap)
     code = (
         "from pathlib import Path; "
         "p=Path('/workspace/blocked.txt'); "
-        "\ntry:\n p.write_text('not allowed')\nexcept OSError:\n print('workspace-read-only')\n"
-        "else:\n raise SystemExit('workspace unexpectedly writable')\n"
-        "Path('/tmp/sandbox-write.txt').write_text('allowed')\n"
+        "\\ntry:\\n p.write_text('not allowed')\\nexcept OSError:\\n print('workspace-read-only')\\n"
+        "else:\\n raise SystemExit('workspace unexpectedly writable')\\n"
+        "Path('/tmp/sandbox-write.txt').write_text('allowed')\\n"
     )
     argv, environment = sandbox.wrap(
         [str(python), "-c", code],
@@ -177,7 +179,7 @@ def test_bubblewrap_runtime_enforces_read_only_workspace(tmp_path):
 def test_workspace_executable_is_rewritten_to_sandbox_path(tmp_path):
     script = tmp_path / "bin" / "inspect"
     script.parent.mkdir()
-    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
     script.chmod(0o755)
     sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=str(_fake_bwrap(tmp_path)))
     argv, _ = sandbox.wrap(
@@ -188,7 +190,6 @@ def test_workspace_executable_is_rewritten_to_sandbox_path(tmp_path):
     command_index = argv.index("--") + 1
     assert argv[command_index] == "/workspace/bin/inspect"
     assert argv[command_index + 1] == "--version"
-
 
 
 @pytest.mark.parametrize("value", [".", "./", "a/./b", "a//b", "artifacts/"])
