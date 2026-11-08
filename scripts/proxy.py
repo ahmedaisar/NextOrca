@@ -115,12 +115,23 @@ def convert_anthropic_to_openai(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _json_error(handler: BaseHTTPRequestHandler, status: int, message: str) -> None:
-    payload = json.dumps({"type": "error", "error": {"type": "proxy_error", "message": message}}).encode()
+def _json_error(
+    handler: BaseHTTPRequestHandler,
+    status: int,
+    message: str,
+    extra_headers: dict[str, str] | None = None,
+) -> None:
+    payload = json.dumps(
+        {"type": "error", "error": {"type": "proxy_error", "message": message}}
+    ).encode()
+    handler.close_connection = True
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(payload)))
     handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Connection", "close")
+    for name, value in (extra_headers or {}).items():
+        handler.send_header(name, value)
     handler.end_headers()
     handler.wfile.write(payload)
 
@@ -198,8 +209,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
             _json_error(self, 413, "Request body exceeds the configured size limit.")
             return
         if not _request_slots.acquire(blocking=False):
-            self.send_header("Retry-After", "2")
-            _json_error(self, 503, "Proxy is busy; retry the request.")
+            _json_error(
+                self, 503, "Proxy is busy; retry the request.",
+                extra_headers={"Retry-After": "2"},
+            )
             return
 
         try:
@@ -253,8 +266,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             _json_error(self, 503, "Remote provider is not configured.")
             return
         url = f"{OPENROUTER_URL}/v1/messages"
-        try:
-            if is_stream:
+        if is_stream:
+            headers_sent = False
+            try:
                 with _remote_client.stream(
                     "POST", url, content=raw, headers=_forward_headers(self)
                 ) as response:
@@ -264,23 +278,38 @@ class ProxyHandler(BaseHTTPRequestHandler):
                         if value:
                             self.send_header(name, value)
                     self.send_header("X-Accel-Buffering", "no")
+                    self.send_header("Connection", "close")
+                    self.close_connection = True
                     self.end_headers()
+                    headers_sent = True
                     for chunk in response.iter_raw():
                         if chunk:
                             self.wfile.write(chunk)
                             self.wfile.flush()
-            else:
-                response = _remote_client.post(
-                    url, content=raw, headers=_forward_headers(self)
-                )
-                self.send_response(response.status_code)
-                for name in ("content-type", "cache-control"):
-                    value = response.headers.get(name)
-                    if value:
-                        self.send_header(name, value)
-                self.send_header("Content-Length", str(len(response.content)))
-                self.end_headers()
-                self.wfile.write(response.content)
+            except httpx.TimeoutException:
+                if headers_sent:
+                    print("[proxy] remote stream timed out after response started")
+                else:
+                    _json_error(self, 504, "Remote provider request timed out.")
+            except httpx.HTTPError:
+                if headers_sent:
+                    print("[proxy] remote stream failed after response started")
+                else:
+                    _json_error(self, 502, "Remote provider request failed.")
+            return
+
+        try:
+            response = _remote_client.post(
+                url, content=raw, headers=_forward_headers(self)
+            )
+            self.send_response(response.status_code)
+            for name in ("content-type", "cache-control"):
+                value = response.headers.get(name)
+                if value:
+                    self.send_header(name, value)
+            self.send_header("Content-Length", str(len(response.content)))
+            self.end_headers()
+            self.wfile.write(response.content)
         except httpx.TimeoutException:
             _json_error(self, 504, "Remote provider request timed out.")
         except httpx.HTTPError:
