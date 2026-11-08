@@ -80,7 +80,7 @@ uv run nextorca \
 
 Interactive mode provides read, search, edit and shell tools. File edits show a diff and shell commands show the exact command before asking for approval.
 
-### 3. Start an interactive coding session\n\n```bash\nuv run nextorca --workspace ./path/to/your-repository\n```\n\nType requests naturally. Use `/help`, `/session`, `/new`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.\n\n### 4. Connect a hosted provider (optional)
+### 3. Start an interactive coding session\n\n```bash\nuv run nextorca --workspace ./path/to/your-repository\n```\n\nType requests naturally. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/goal`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.\n\n### 4. Connect a hosted provider (optional)
 
 ```bash
 export NEXTORCA_BASE_URL=https://openrouter.ai/api/v1
@@ -195,6 +195,20 @@ description: Run focused tests before and after making code changes.
 Only skill names and descriptions are added to the agent's initial context. The full instructions are loaded only when the agent selects a matching skill. Project skills take precedence over user-wide skills with the same name. Skill files are guidance, not a permission mechanism: they cannot bypass tool approvals.
 
 See [the skills guide](docs/skills.md) for details.
+
+## Goal mode
+
+Use goal mode for multi-step tasks that should not be considered complete until checks and an independent review pass:
+
+```text
+/goal Fix the login refresh bug and add a regression test --verify uv run pytest tests/auth -q
+/goal status
+/goal resume
+```
+
+NextOrca asks the worker to signal completion, runs the supplied verification command after approval, then starts a fresh read-only reviewer session with access to workspace tools and the git diff. If verification or review fails, feedback is sent back to the worker for another attempt. Goal state is recorded in the session event log.
+
+The reviewer is a second model pass, not a formal proof. Without a supplied verification command, automated verification is skipped and the reviewer must still explicitly approve.
 
 ## Plugins
 

@@ -126,6 +126,14 @@ class ToolRegistry:
             raise ToolValidationError(f"Tool '{spec.name}' is already registered.")
         self._tools[spec.name] = spec
 
+    def unregister(self, name: str) -> None:
+        """Remove a temporary tool from the registry if it exists."""
+        self._tools.pop(name, None)
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return tuple(self._tools)
+
     def get(self, name: str) -> ToolSpec:
         try:
             return self._tools[name]
