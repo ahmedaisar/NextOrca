@@ -273,6 +273,39 @@ Routing controls:
 
 Set `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_LOCAL_API_KEY` and `NEXTORCA_CLOUD_API_KEY` to persist provider settings. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The router currently uses a deterministic request classifier, not learned confidence scoring; its decisions are visible and manually overridable. The versioned classification corpus is checked in at `evals/routing_cases.json` and evaluated by `uv run python evals/evaluate_routing.py --fail-under 0.95`.
 
+## MCP stdio extensions (experimental)
+
+NextOrca can discover tools from explicitly configured local MCP stdio servers. Configure trusted server processes in a JSON file; commands must be argv arrays (not shell strings). Only a small safe environment allowlist is inherited by default. Add a secret environment variable to `env_passthrough` only when the server genuinely needs it.
+
+Example `mcp-servers.json`:
+
+```json
+{
+  "servers": [
+    {
+      "name": "my-tools",
+      "command": ["uvx", "my-mcp-server"],
+      "env_passthrough": ["MY_MCP_TOKEN"],
+      "timeout_seconds": 15
+    }
+  ]
+}
+```
+
+Start the agent with MCP explicitly enabled:
+
+```bash
+uv run nextorca \
+  --workspace ./my-repo \
+  --mcp-config ./mcp-servers.json \
+  --allow-mcp-tools \
+  "Inspect the repository and consult the configured tools when useful."
+```
+
+Every MCP tool is treated as an external operation (not trusted as read-only from server annotations) and requires interactive approval after the server name, tool and arguments are shown. MCP results are untrusted input and cannot override agent policy. Tool output is bounded by the same runtime output limits. Server processes are closed when the CLI exits.
+
+The first transport is local **stdio only**. It supports the modern stateless discovery flow (`server/discover`, protocol revision `2026-07-28`) and falls back to the legacy `initialize` handshake for older servers. HTTP/SSE MCP transports, elicitation, roots subscriptions, prompts/resources and dynamic tool-list updates are not included yet. Local-only model routing prevents NextOrca from calling a cloud model, but a configured MCP server is still a separate process and may itself access external services; review the server command and permissions before enabling it.
+
 ### Local usage and routing metrics
 
 Each model attempt records latency, normalized input/output token usage, success/failure, provider/model and the routing decision in the local SQLite session database. Nothing is sent to an analytics service. View the workspace totals, or narrow the report to one resumed session:
