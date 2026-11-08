@@ -13,7 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --extra dev
-      - run: uv run ruff check scripts/agent_protocol.py scripts/generate_claude_settings.py scripts/proxy_security.py nextorca tests
+      - run: uv run ruff check scripts/agent_protocol.py scripts/generate_claude_settings.py scripts/proxy_security.py nextorca tests evals
       - name: Compile proxy modules
         run: uv run python -m py_compile scripts/proxy.py scripts/proxy_security.py nextorca/*.py
       - name: Check shell syntax
@@ -22,4 +22,5 @@ jobs:
             bash -n "$script"
           done
       - run: uv run nextorca --help
+      - run: uv run python evals/evaluate_routing.py --fail-under 0.95
       - run: uv run pytest
