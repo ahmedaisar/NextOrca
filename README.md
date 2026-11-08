@@ -271,7 +271,18 @@ Routing controls:
 - `--privacy-mode local-only`: never send prompts/tool context to a cloud provider; use with `--route-mode local` or `auto`.
 - `--route-mode single`: preserve the original one-provider behavior and `--base-url`/`--model` options.
 
-Set `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_LOCAL_API_KEY` and `NEXTORCA_CLOUD_API_KEY` to persist provider settings. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The router currently uses a deterministic request classifier, not learned confidence scoring; its decisions are visible and manually overridable.
+Set `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_LOCAL_API_KEY` and `NEXTORCA_CLOUD_API_KEY` to persist provider settings. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The router currently uses a deterministic request classifier, not learned confidence scoring; its decisions are visible and manually overridable. The versioned classification corpus is checked in at `evals/routing_cases.json` and evaluated by `uv run python evals/evaluate_routing.py --fail-under 0.95`.
+
+### Local usage and routing metrics
+
+Each model attempt records latency, normalized input/output token usage, success/failure, provider/model and the routing decision in the local SQLite session database. Nothing is sent to an analytics service. View the workspace totals, or narrow the report to one resumed session:
+
+```bash
+uv run nextorca --workspace ./my-repo --session-stats
+uv run nextorca --workspace ./my-repo --session-id SESSION_ID --session-stats
+```
+
+Provider token counts are reported when the endpoint supplies usage metadata. Cost is intentionally not estimated yet because provider pricing and account-specific discounts need an explicit price configuration; token counts are not a substitute for billing data.
 
 ## Approved File Edits and Undo (experimental)
 
