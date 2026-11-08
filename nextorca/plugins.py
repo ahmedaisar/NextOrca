@@ -69,12 +69,12 @@ def _validate_tool(tool: Any) -> dict[str, Any]:
     properties = parameters.get("properties", {})
     required = parameters.get("required", [])
     if not isinstance(properties, dict) or not isinstance(required, list):
-        raise ValueError(f"Plugin tool {name!r} has invalid properties or required fields.")
+        raise TypeError(f"Plugin tool {name!r} has invalid properties or required fields.")
     if parameters.get("additionalProperties", False) is not False:
         raise ValueError(f"Plugin tool {name!r} must reject additional properties.")
     for key, definition in properties.items():
         if not isinstance(key, str) or not isinstance(definition, dict):
-            raise ValueError(f"Plugin tool {name!r} has an invalid property definition.")
+            raise TypeError(f"Plugin tool {name!r} has an invalid property definition.")
         if definition.get("type") not in {"string", "integer", "number", "boolean"}:
             raise ValueError("Plugin command placeholders support only scalar argument types.")
     if any(not isinstance(key, str) or key not in properties for key in required):
@@ -126,7 +126,7 @@ def _load_plugin(directory: Path, expected_root: Path) -> Plugin:
     skill_values = manifest.get("skills", [])
     tool_values = manifest.get("tools", [])
     if not isinstance(skill_values, list) or not isinstance(tool_values, list):
-        raise ValueError("Plugin skills and tools must be arrays.")
+        raise TypeError("Plugin skills and tools must be arrays.")
     skill_roots: list[Path] = []
     for value in skill_values:
         if not isinstance(value, str) or not _safe_relative_path(value):
