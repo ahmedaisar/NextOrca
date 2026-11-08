@@ -151,13 +151,16 @@ def test_bubblewrap_runtime_enforces_read_only_workspace(tmp_path):
     if not bwrap or not python.is_file():
         pytest.skip("bubblewrap and the system Python runtime are required for this smoke test.")
     sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=bwrap)
-    code = (
-        "from pathlib import Path; "
-        "p=Path('/workspace/blocked.txt'); "
-        "\\ntry:\\n p.write_text('not allowed')\\nexcept OSError:\\n print('workspace-read-only')\\n"
-        "else:\\n raise SystemExit('workspace unexpectedly writable')\\n"
-        "Path('/tmp/sandbox-write.txt').write_text('allowed')\\n"
-    )
+    code = """from pathlib import Path
+p = Path('/workspace/blocked.txt')
+try:
+    p.write_text('not allowed')
+except OSError:
+    print('workspace-read-only')
+else:
+    raise SystemExit('workspace unexpectedly writable')
+Path('/tmp/sandbox-write.txt').write_text('allowed')
+"""
     argv, environment = sandbox.wrap(
         [str(python), "-c", code],
         working_directory=tmp_path,
