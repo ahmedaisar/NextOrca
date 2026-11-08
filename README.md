@@ -1,14 +1,14 @@
 # NextOrca
 
-**A local-first, provider-neutral coding-agent runtime for exploring and changing codebases with explicit permissions.**
+**A local-first terminal coding agent for working directly in your projects, with local and cloud models behind one agent experience.**
 
 [![CI](https://github.com/ahmedaisar/NextOrca/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmedaisar/NextOrca/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-NextOrca runs locally and connects to any compatible OpenAI Chat Completions endpoint. Use one provider or combine a local model with a cloud model through deterministic hybrid routing. The runtime includes workspace-scoped tools, resumable sessions, optional diff-approved file edits, local metrics, and experimental sandboxed MCP stdio integrations.
+Run `nextorca` inside a project to start an interactive coding session. Ask it to inspect and change code, run project commands, and iterate on test failures. Local/cloud orchestration stays behind the same terminal agent experience.
 
-> **Project status:** experimental. NextOrca is not a fully autonomous or commercially hardened coding platform. Review the [known limitations](#limitations-and-security) before using it on important repositories.
+> **Project status:** personal project, under active development. Shell commands run with your user account permissions and are shown for approval before execution.
 
 ## Contents
 
@@ -26,7 +26,7 @@ NextOrca runs locally and connects to any compatible OpenAI Chat Completions end
 - **Provider-neutral runtime:** connect to local or hosted OpenAI-compatible APIs.
 - **Hybrid routing:** route codebase exploration to a local model and more demanding coding tasks to a cloud model, with manual local/cloud overrides.
 - **Privacy mode:** `local-only` prevents prompts and tool context from being sent to a cloud provider.
-- **Workspace-scoped tools:** read files, search text, and list files within the selected workspace.
+- **Interactive terminal agent:** launch without a prompt to start a persistent conversation.\n- **Coding tools:** read, search, edit files and run project commands with explicit approval.
 - **Approval-gated edits:** file creation and exact-text edits are disabled by default; opt in with `--allow-edits` and approve each proposed diff.
 - **Undo checkpoints:** inspect approved changes and undo a checkpoint when the target file has not changed since.
 - **Persistent sessions:** SQLite-backed session history and resumable session IDs.
@@ -74,9 +74,9 @@ uv run nextorca \
   "Explain the main modules and how they fit together."
 ```
 
-The runtime is read-only by default. It can inspect the selected workspace using its built-in tools without enabling file mutations.
+Interactive mode provides read, search, edit and shell tools. File edits show a diff and shell commands show the exact command before asking for approval.
 
-### 3. Connect a hosted provider (optional)
+### 3. Start an interactive coding session\n\n```bash\nuv run nextorca --workspace ./path/to/your-repository\n```\n\nType requests naturally. Use `/help`, `/session`, `/new`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.\n\n### 4. Connect a hosted provider (optional)
 
 ```bash
 export NEXTORCA_BASE_URL=https://openrouter.ai/api/v1
@@ -91,7 +91,7 @@ Use your provider's own compatible base URL, model identifier, and API key varia
 
 ## Examples
 
-### Explore a codebase
+### Start the terminal agent\n\n```bash\ncd ./my-repo\nuv run nextorca\n```\n\n### Explore a codebase
 
 ```bash
 uv run nextorca --workspace ./my-repo \
