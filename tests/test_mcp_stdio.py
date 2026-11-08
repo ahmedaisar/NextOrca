@@ -40,6 +40,8 @@ for line in sys.stdin:
                 "resultType": "complete",
                 "supportedVersions": ["2026-07-28"],
                 "capabilities": {"tools": {}},
+                "cacheScope": "private",
+                "ttlMs": 0,
                 "_meta": {"io.modelcontextprotocol/serverInfo": {"name": "modern-test", "version": "1"}}
             }
         })
@@ -282,7 +284,9 @@ for line in sys.stdin:
         result = {
             "resultType": "complete",
             "supportedVersions": ["2026-07-28"],
-            "capabilities": {"tools": {}}
+            "capabilities": {"tools": {}},
+            "cacheScope": "private",
+            "ttlMs": 0
         }
         sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}) + "\n")
         sys.stdout.flush()
@@ -303,6 +307,24 @@ for line in sys.stdin:
     with pytest.raises(MCPServerError, match="timed out"):
         client.list_tools()
     assert process.poll() is not None
+    client.close()
+
+
+def test_mcp_manifest_rejects_oversized_configuration(tmp_path):
+    config_path = tmp_path / "mcp.json"
+    config_path.write_text('{"servers": []}' + (" " * 65_000), encoding="utf-8")
+    with pytest.raises(MCPServerError, match="64 KB"):
+        load_mcp_config(config_path)
+
+
+def test_modern_discovery_requires_cache_and_capability_fields(tmp_path):
+    script = MODERN_SERVER.replace(
+        '            "cacheScope": "private",\n            "ttlMs": 0',
+        '',
+    )
+    client = _client(script, tmp_path, "bad-discovery")
+    with pytest.raises(MCPServerError, match="cacheScope"):
+        client.connect()
     client.close()
 
 
