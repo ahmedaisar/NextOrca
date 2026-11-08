@@ -163,7 +163,7 @@ claude -p (sonnet) ──→ proxy (9091) ──→ OpenRouter Qwen3-Coder-Next
 
 The main agent runs as sonnet (cloud), and when it spawns subagents (Task tool) they default to haiku, which the proxy routes to the local 4B model. If the local model hits context limits or exceeds 10 turns, the proxy automatically falls back to OpenRouter.
 
-The proxy (`scripts/proxy.py`) handles:
+The proxy binds to loopback, requires the generated local bearer token for API requests, limits request size/concurrency, and streams remote responses incrementally. Local inference is currently non-streaming; local requests that require streaming are escalated to the cloud provider.\n\nThe proxy (`scripts/proxy.py`) handles:
 - Anthropic Messages API ↔ OpenAI Chat Completions format conversion for the local model
 - Parsing `<tool_call>` text output from the local model back into Anthropic tool_use blocks
 - Automatic fallback to OpenRouter on context overflow
@@ -183,7 +183,7 @@ cp .env.example .env
 # Edit .env and set OPENROUTER_API_KEY
 ```
 
-`.claude/settings.local.json` is auto-generated on first run from your `.env` key. No need to create it manually.
+`.claude/settings.local.json` is generated locally on first run. The upstream `OPENROUTER_API_KEY` remains in `.env` and is never copied into Claude Code settings. Setup creates a separate random local proxy token and writes the token/settings with owner-only permissions. The analysis scripts run Claude Code in `plan` mode and save the returned stdout themselves.
 
 Place your GGUF model at `models/LocoOperator-4B-GGUF/LocoOperator-4B.gguf`.
 
