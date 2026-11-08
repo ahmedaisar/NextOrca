@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import errno
 import os
+import platform
 import shutil
+import struct
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -53,6 +56,82 @@ class LinuxBubblewrapSandbox:
             raise SandboxError("Configured bubblewrap executable is not executable.")
         self.bwrap_path = str(executable.resolve(strict=True))
         self.writable_paths = self._resolve_writable_paths(writable_paths)
+        self._seccomp_fd: int | None = None
+        if not self.allow_network:
+            self._seccomp_fd = self._create_network_deny_filter()
+
+    @staticmethod
+    def _create_network_deny_filter() -> int:
+        """Create a seccomp BPF FD that denies IP/raw/network sockets and io_uring."""
+        machine = platform.machine().lower()
+        architectures = {
+            "x86_64": (0xC000003E, 41, 53),
+            "amd64": (0xC000003E, 41, 53),
+            "aarch64": (0xC00000B7, 198, 199),
+            "arm64": (0xC00000B7, 198, 199),
+        }
+        resolved = architectures.get(machine)
+        if resolved is None:
+            raise SandboxError(
+                f"Network-deny seccomp is not implemented for Linux architecture {machine!r}."
+            )
+        audit_arch, syscall_socket, syscall_socketpair = resolved
+        instructions = [
+            (0x20, 0, 0, 4),  # Load seccomp_data.arch.
+            (0x15, 1, 0, audit_arch),  # Kill processes using a different ABI.
+            (0x06, 0, 0, 0x80000000),  # SECCOMP_RET_KILL_PROCESS.
+            (0x20, 0, 0, 0),  # Load seccomp_data.nr.
+            (0x45, 0, 1, 0x40000000),  # Reject x32 ABI syscalls on x86-64.
+            (0x06, 0, 0, 0x80000000),
+            (0x20, 0, 0, 0),
+            (0x15, 0, 3, syscall_socket),  # socket(domain, ...).
+            (0x20, 0, 0, 16),  # Load socket domain.
+            (0x15, 1, 0, 1),  # Allow AF_UNIX only.
+            (0x06, 0, 0, 0x00050000 | errno.EPERM),
+            (0x20, 0, 0, 0),
+            (0x15, 0, 3, syscall_socketpair),  # socketpair(domain, ...).
+            (0x20, 0, 0, 16),
+            (0x15, 1, 0, 1),  # Allow AF_UNIX only.
+            (0x06, 0, 0, 0x00050000 | errno.EPERM),
+            (0x20, 0, 0, 0),
+            (0x15, 0, 1, 425),  # Block io_uring_setup (which can submit socket ops).
+            (0x06, 0, 0, 0x00050000 | errno.EPERM),
+            (0x06, 0, 0, 0x7FFF0000),  # SECCOMP_RET_ALLOW.
+        ]
+        try:
+            fd = os.memfd_create(
+                "nextorca-network-deny",
+                flags=getattr(os, "MFD_CLOEXEC", 1),
+            )
+            program = b"".join(struct.pack("=HBBI", *item) for item in instructions)
+            os.write(fd, program)
+            os.lseek(fd, 0, os.SEEK_SET)
+            return fd
+        except (OSError, AttributeError) as exc:
+            try:
+                os.close(fd)
+            except (UnboundLocalError, OSError):
+                pass
+            raise SandboxError("Could not create the required network-deny seccomp filter.") from exc
+
+    @property
+    def pass_fds(self) -> tuple[int, ...]:
+        return (self._seccomp_fd,) if self._seccomp_fd is not None else ()
+
+    def close(self) -> None:
+        fd = self._seccomp_fd
+        self._seccomp_fd = None
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _resolve_writable_paths(self, values: Sequence[str]) -> tuple[tuple[str, Path], ...]:
         if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
@@ -186,6 +265,7 @@ class LinuxBubblewrapSandbox:
             "--die-with-parent",
             "--new-session",
             "--unshare-all",
+            "--share-net",
             "--cap-drop", "ALL",
             "--size", str(self.MAX_TMP_BYTES),
             "--tmpfs", "/tmp",
@@ -194,8 +274,12 @@ class LinuxBubblewrapSandbox:
             "--dir", "/tmp/nextorca-home",
             "--dir", "/workspace",
         ]
-        if self.allow_network:
-            argv.append("--share-net")
+        if self._seccomp_fd is not None:
+            try:
+                os.lseek(self._seccomp_fd, 0, os.SEEK_SET)
+            except OSError as exc:
+                raise SandboxError("Network-deny seccomp filter is unavailable.") from exc
+            argv.extend(["--seccomp", str(self._seccomp_fd)])
         self._add_system_mounts(argv)
         argv.extend(["--ro-bind", str(self.workspace_root), "/workspace"])
         for relative, host_path in self.writable_paths:
