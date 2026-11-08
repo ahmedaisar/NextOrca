@@ -20,6 +20,14 @@ from nextorca.workspace import Workspace, build_workspace_tools
 
 
 def build_parser() -> argparse.ArgumentParser:
+    route_default = os.environ.get("NEXTORCA_ROUTE_MODE")
+    if route_default is None:
+        route_default = (
+            "auto"
+            if os.environ.get("NEXTORCA_LOCAL_BASE_URL")
+            and os.environ.get("NEXTORCA_CLOUD_BASE_URL")
+            else "single"
+        )
     parser = argparse.ArgumentParser(
         prog="nextorca",
         description="NextOrca terminal coding agent. Start an interactive session or pass a prompt.",
@@ -34,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--route-mode",
         choices=["single", "auto", "local", "cloud"],
-        default=os.environ.get("NEXTORCA_ROUTE_MODE", "single"),
+        default=route_default,
         help="Use one provider, automatic hybrid routing, or force local/cloud.",
     )
     parser.add_argument(
@@ -178,12 +186,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.prompt and not interactive:
             parser.error("provide a prompt, --undo-checkpoint, or --list-checkpoints")
 
-        route_logger = (
-            lambda decision: print(
-                json.dumps({"type": "route_decision", **decision.as_dict()}),
-                file=sys.stderr,
-            )
-        ) if args.verbose else None
+        def log_route(decision):
+            if args.verbose:
+                detail = json.dumps({"type": "route_decision", **decision.as_dict()})
+            else:
+                detail = (
+                    f"route: {decision.provider}/{decision.model} — {decision.reason}"
+                )
+            print(detail, file=sys.stderr)
+
+        route_logger = log_route if args.verbose or interactive else None
 
         if args.route_mode == "single":
             if args.privacy_mode == "local-only":

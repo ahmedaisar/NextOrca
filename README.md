@@ -90,7 +90,7 @@ Interactive mode provides read, search, edit and shell tools. File edits show a 
 uv run nextorca --workspace ./path/to/your-repository
 ```
 
-Type requests naturally. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/goal`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
+Type requests naturally. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
 
 ### 4. Connect a hosted provider (optional)
 
@@ -228,6 +228,24 @@ Use goal mode for multi-step tasks that should not be considered complete until 
 NextOrca asks the worker to signal completion, runs the supplied verification command after approval, then starts a fresh read-only reviewer session with access to workspace tools and the git diff. If verification or review fails, feedback is sent back to the worker for another attempt. Goal state is recorded in the session event log.
 
 The reviewer is a second model pass, not a formal proof. Without a supplied verification command, automated verification is skipped and the reviewer must still explicitly approve.
+
+## Local/cloud routing
+
+NextOrca can use a local OpenAI-compatible endpoint and a hosted endpoint behind the same interactive agent. Configure both, then start with `--route-mode auto`:
+
+```bash
+export NEXTORCA_LOCAL_BASE_URL=http://127.0.0.1:8080/v1
+export NEXTORCA_LOCAL_MODEL=your-local-model
+export NEXTORCA_CLOUD_BASE_URL=https://openrouter.ai/api/v1
+export NEXTORCA_CLOUD_MODEL=your-provider/cloud-model
+export NEXTORCA_CLOUD_API_KEY=your-api-key
+
+uv run nextorca --route-mode auto
+```
+
+When both local and cloud endpoint environment variables are present, the default route mode is now `auto`. The same terminal session and tools are used whichever provider handles a turn. Route choices are shown in the terminal. Use `/route local`, `/route cloud`, or `/route auto` to override for the current session, and `/privacy local-only` to prevent cloud routing and fallback.
+
+Auto routing currently uses an explainable task classifier: exploration/explanation prefers local; edits, debugging, testing and review prefer cloud. A local outage may fall back to cloud only before any partial stream output. Local-only mode never falls back.
 
 ## Context management
 
