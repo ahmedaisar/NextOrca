@@ -65,11 +65,20 @@ class LinuxBubblewrapSandbox:
             relative = PurePosixPath(value)
             if relative.is_absolute() or PureWindowsPath(value).is_absolute():
                 raise SandboxError("Writable workspace paths must be relative.")
-            if any(part in {"", ".", ".."} for part in relative.parts):
-                raise SandboxError("Writable workspace paths cannot contain traversal components.")
+            raw_parts = value.split("/")
+            if (
+                not relative.parts
+                or any(part in {"", ".", ".."} for part in raw_parts)
+                or any(part in {"", ".", ".."} for part in relative.parts)
+            ):
+                raise SandboxError(
+                    "Writable workspace paths cannot target the workspace root or contain traversal components."
+                )
             candidate = self.workspace_root.joinpath(*relative.parts)
             try:
                 resolved = candidate.resolve(strict=True)
+                if candidate.absolute() != resolved:
+                    raise SandboxError("Writable paths cannot traverse symlinks.")
                 resolved.relative_to(self.workspace_root)
             except (OSError, RuntimeError, ValueError) as exc:
                 raise SandboxError(
