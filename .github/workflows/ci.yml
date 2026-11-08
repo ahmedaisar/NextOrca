@@ -12,6 +12,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
+      - name: Install Linux sandbox runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap apparmor
+          sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+          abi <abi/4.0>,
+          include <tunables/global>
+
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+            include if exists <local/bwrap>
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          bwrap --version
+          bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / /usr/bin/true
       - run: uv sync --extra dev
       - run: uv run python -c "from importlib.metadata import version; assert version('nextorca') == '0.8.0'"
       - run: uv run ruff check scripts/agent_protocol.py scripts/generate_claude_settings.py scripts/proxy_security.py nextorca tests evals

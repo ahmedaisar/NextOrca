@@ -33,6 +33,7 @@
 - 📁 [Project Structure](#-project-structure)
 - ⚠️ [Known Limitations](#️-known-limitations)
 - 🧭 [Independent Agent Runtime](#independent-agent-runtime-experimental)
+- 🔌 [MCP stdio Integrations](#mcp-stdio-integrations-experimental-linux-only)
 - 🔀 [Hybrid Model Routing](#hybrid-model-routing-experimental)
 - 📊 [Local Usage Metrics](#local-usage-and-routing-metrics)
 - 🛠️ [Approved File Edits and Undo](#approved-file-edits-and-undo-experimental)
@@ -253,6 +254,57 @@ uv run nextorca --workspace ./data/repos/tqdm "Map the main package structure."
 ```
 
 The runtime accepts `--base-url`, `--model`, `--api-key`, `--workspace` and `--max-turns`; `NEXTORCA_BASE_URL`, `NEXTORCA_API_KEY` and `NEXTORCA_MODEL` can supply defaults. Use `--verbose` to emit structured turn/tool events to stderr. Each run also prints a session ID to stderr; pass it back with `--session-id` to resume. The default SQLite database is `~/.nextorca/sessions.sqlite3` and can be changed with `--session-db` or `NEXTORCA_SESSION_DB`. Session files are written with owner-only database permissions. The runtime preserves system/user messages and recent turns; when the context budget is exceeded, it elides older tool output and assistant prose and records a `context_pruned` checkpoint. It errors rather than silently dropping required user/system context.
+
+## MCP stdio integrations (experimental; Linux only)
+
+NextOrca can connect to explicitly configured MCP stdio servers. MCP is disabled unless both a manifest and the `--allow-mcp-tools` flag are supplied. Commands are passed as an argv array (never through a shell), and every external tool invocation is marked as a mutation and requires interactive approval after NextOrca displays the server, tool name and arguments.
+
+**MCP execution requires Linux and Bubblewrap.** Install Bubblewrap first:
+
+```bash
+sudo apt-get install bubblewrap
+```
+
+On Ubuntu 24.04 and later, AppArmor may also block the unprivileged user namespaces Bubblewrap needs. If Bubblewrap reports `setting up uid map: Permission denied`, install a profile scoped to Bubblewrap rather than disabling the system-wide user-namespace restriction:
+
+```bash
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+This grants the namespace permission to `/usr/bin/bwrap` only; do not disable AppArmor's global user-namespace restriction as a workaround.
+
+NextOrca fails closed when Bubblewrap is missing or on unsupported operating systems; it never falls back to running an MCP server directly on the host. The sandbox uses isolated Linux namespaces, drops Linux capabilities, exposes a minimal read-only system filesystem and mounts the configured workspace read-only. Network access is disabled by default. Set `network_access: true` only for a server you trust that needs network access.
+
+Start from the example manifest and replace the sample command with the executable and server script you have installed:
+
+```bash
+cp mcp-servers.example.json mcp-servers.json
+# Edit command, cwd and any required environment-variable names.
+uv run nextorca \
+  --workspace ./my-repo \
+  --mcp-config ./mcp-servers.json \
+  --allow-mcp-tools \
+  "Inspect this repository using the configured MCP tools."
+```
+
+Each server entry supports:
+
+- `command`: non-empty argv array; shell expansion and shell command strings are not supported.
+- `cwd`: optional working directory within the workspace.
+- `env_passthrough`: names of environment variables explicitly passed into the sandbox. Host API keys are not inherited by default. Dynamic-loader and interpreter injection variables are refused.
+- `network_access`: defaults to `false`; `true` explicitly shares the host network namespace.
+- `writable_paths`: existing, non-overlapping directories relative to the workspace that are bind-mounted writable. Leave this empty for read-only access.
+
+MCP server instructions, tool descriptions and tool results are untrusted data and cannot override NextOrca's policy. The MCP process is terminated on request timeout and when the CLI exits. The sandbox limits filesystem visibility and network reachability, but it is not a full virtual machine: only run server commands you trust. Writable paths are a broad grant to that server; writes made directly by an MCP process do not pass through NextOrca's file diff/checkpoint undo mechanism. Cross-platform sandbox backends, resource quotas, and stronger integration tests remain future work. MCP integrations are experimental and are not a commercial-deployment security guarantee.
 
 ## Hybrid Model Routing (experimental)
 
