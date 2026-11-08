@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 class ToolValidationError(ValueError):
@@ -93,9 +94,13 @@ def validate_arguments(schema: dict[str, Any], arguments: dict[str, Any]) -> Non
                 raise ToolValidationError(f"Argument '{name}' is too short.")
             if "enum" in definition and value not in definition["enum"]:
                 raise ToolValidationError(f"Argument '{name}' has an unsupported value.")
-        if isinstance(value, int) and not isinstance(value, bool):
-            if "minimum" in definition and value < int(definition["minimum"]):
-                raise ToolValidationError(f"Argument '{name}' is below its minimum.")
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and "minimum" in definition
+            and value < int(definition["minimum"])
+        ):
+            raise ToolValidationError(f"Argument '{name}' is below its minimum.")
 
 
 class ToolRegistry:
