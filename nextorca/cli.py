@@ -249,12 +249,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             if edits_enabled or mcp_enabled
             else ReadOnlyPermissionPolicy()
         )
-        system_prompt = AgentConfig().system_prompt
-        if mcp_enabled and not edits_enabled:
-            system_prompt = system_prompt.replace(
-                "The available tools are read-only.",
-                "Built-in workspace tools are read-only. External MCP tools require approval.",
-            )
+        system_prompt = AgentConfig().system_prompt.replace(
+            "The available tools are read-only.",
+            "Built-in workspace tools are read-only. Write/Edit and external MCP tools, "
+            "when enabled, require explicit user approval.",
+        )
         if edits_enabled:
             system_prompt += (
                 " Write and Edit operations are available, but every mutation requires the "
