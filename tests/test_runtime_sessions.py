@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nextorca.runtime import AgentRuntime
+from nextorca.runtime import AgentConfig, AgentRuntime
 from nextorca.session_store import SQLiteSessionStore
 from nextorca.types import AssistantTurn
 from nextorca.workspace import Workspace, build_workspace_tools
@@ -79,7 +79,7 @@ def test_runtime_records_context_pruning_checkpoint(tmp_path):
         tools=build_workspace_tools(workspace),
         session_store=store,
         workspace_root=workspace.root,
-        config=__import__("nextorca.runtime", fromlist=["AgentConfig"]).AgentConfig(
+        config=AgentConfig(
             max_context_chars=2_500,
             preserve_recent_messages=2,
         ),
