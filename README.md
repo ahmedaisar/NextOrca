@@ -213,6 +213,39 @@ This reads queries from `data/queries/tqdm-queries.txt` and saves results to `da
 2. Create a queries file at `data/queries/repo-queries.txt` (tab-separated `id\tquery`)
 3. Run: `./scripts/analyze.sh repo`
 
+## Independent Agent Runtime (experimental)
+
+The repository now includes an independent, read-only coding-agent runtime alongside the existing Claude Code compatibility proxy. It has a provider contract, a bounded model/tool loop, a JSON-schema-validated tool registry and workspace-scoped `Read`, `Glob` and literal-text `Grep` tools.
+
+Install the project and development tools:
+
+```bash
+uv sync --extra dev
+```
+
+Run against a local OpenAI-compatible endpoint (for example, a llama.cpp server exposing `/v1/chat/completions`):
+
+```bash
+uv run nextorca \
+  --base-url http://127.0.0.1:8080/v1 \
+  --model your-local-model \
+  --workspace ./data/repos/tqdm \
+  "Explain how tqdm detects whether it is running in a Jupyter notebook."
+```
+
+Run against an OpenAI-compatible hosted endpoint such as OpenRouter:
+
+```bash
+export NEXTORCA_BASE_URL=https://openrouter.ai/api/v1
+export NEXTORCA_API_KEY=your-key
+export NEXTORCA_MODEL=your-provider/model
+uv run nextorca --workspace ./data/repos/tqdm "Map the main package structure."
+```
+
+The runtime accepts `--base-url`, `--model`, `--api-key`, `--workspace` and `--max-turns`; `NEXTORCA_BASE_URL`, `NEXTORCA_API_KEY` and `NEXTORCA_MODEL` can supply defaults. Use `--verbose` to emit structured turn/tool events to stderr.
+
+**Current boundary:** the independent runtime is an experimental preview. Its built-in tools are read-only; paths are confined to the selected workspace; unknown tool names and invalid arguments are rejected; execution defaults to a read-only permission policy. It currently uses non-streaming OpenAI Chat Completions-compatible requests and does not yet include persistent sessions, context compaction, edit/write tools, interactive approval UX or a sandbox for arbitrary commands. The existing hybrid proxy remains available for the LocoOperator sub-agent integration.
+
 ## 📁 Project Structure
 
 ```
