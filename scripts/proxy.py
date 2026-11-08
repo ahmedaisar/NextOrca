@@ -47,7 +47,7 @@ try:
 except OSError:
     PROXY_TOKEN = ""
 
-if (MAX_REQUEST_BYTES <= 0 or MAX_CONCURRENT_REQUESTS <= 0\n        or MAX_CONCURRENT_CONNECTIONS <= 0 or MAX_LOCAL_TURNS <= 0):
+if MAX_REQUEST_BYTES <= 0 or MAX_CONCURRENT_REQUESTS <= 0 or MAX_CONCURRENT_CONNECTIONS <= 0 or MAX_LOCAL_TURNS <= 0:
     raise ValueError("Proxy request, concurrency and turn limits must be positive.")
 
 _local_client = httpx.Client(
