@@ -319,7 +319,7 @@ def test_mcp_manifest_rejects_oversized_configuration(tmp_path):
 
 def test_modern_discovery_requires_cache_and_capability_fields(tmp_path):
     script = MODERN_SERVER.replace(
-        '                "cacheScope": "private",\n                "ttlMs": 0',
+        '                "cacheScope": "private",\n                "ttlMs": 0,\n',
         '',
     )
     client = _client(script, tmp_path, "bad-discovery")
