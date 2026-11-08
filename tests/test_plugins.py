@@ -147,7 +147,7 @@ def test_plugin_skills_join_the_agent_skill_catalog(tmp_path):
     skill_dir = directory / "skills" / "workflow"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\\nname: workflow\\ndescription: Plugin workflow\\n---\\n\\nUse the plugin workflow.",
+        "---\nname: workflow\ndescription: Plugin workflow\n---\n\nUse the plugin workflow.",
         encoding="utf-8",
     )
 
