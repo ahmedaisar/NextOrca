@@ -18,6 +18,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - [Examples](#examples)
 - [Skills](#skills)
 - [Plugins](#plugins)
+- [Context management](#context-management)
 - [Configuration](#configuration)
 - [Contributing](#contributing)
 - [Limitations and security](#limitations-and-security)
@@ -30,6 +31,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Privacy mode:** `local-only` prevents prompts and tool context from being sent to a cloud provider.
 - **Interactive terminal agent:** launch without a prompt to start a persistent conversation.
 - **Streaming responses:** compatible providers can stream assistant text directly into the terminal.
+- **Long-session context:** compact conversation history into a structured summary without deleting the stored transcript.
 - **Coding tools:** read, search, edit files and run project commands with explicit approval.
 - **Agent Skills:** discover compatible SKILL.md guides from your project or user skill folders and load them on demand.
 - **Local plugins:** bundle skills and approval-gated command tools using a versioned JSON manifest.
@@ -226,6 +228,19 @@ Use goal mode for multi-step tasks that should not be considered complete until 
 NextOrca asks the worker to signal completion, runs the supplied verification command after approval, then starts a fresh read-only reviewer session with access to workspace tools and the git diff. If verification or review fails, feedback is sent back to the worker for another attempt. Goal state is recorded in the session event log.
 
 The reviewer is a second model pass, not a formal proof. Without a supplied verification command, automated verification is skipped and the reviewer must still explicitly approve.
+
+## Context management
+
+Long coding sessions can accumulate tool output and old discussion. Use:
+
+```text
+/context
+/compact
+```
+
+NextOrca asks the configured provider to summarize the objective, constraints, decisions, files, verified commands/results and remaining work. The summary is saved as an append-only session event. Original messages remain in SQLite; subsequent model requests use the summary plus recent complete message/tool-call turns.
+
+Compaction is a model-generated aid, not a perfect transcript replacement. Review the summary if an important detail seems missing.
 
 ## Plugins
 
