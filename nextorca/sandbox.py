@@ -128,10 +128,7 @@ class LinuxBubblewrapSandbox:
                 pass
 
     def __del__(self) -> None:
-        try:
-            self.close()
-        except Exception:
-            pass
+        self.close()
 
     def _resolve_writable_paths(self, values: Sequence[str]) -> tuple[tuple[str, Path], ...]:
         if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
