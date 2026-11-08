@@ -1,0 +1,578 @@
+from __future__ import annotations
+
+import json
+import os
+import queue
+import re
+import subprocess
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from nextorca.tool_registry import (
+    PreparedToolOperation,
+    ToolExecutionError,
+    ToolRegistry,
+    ToolSpec,
+)
+
+
+MODERN_PROTOCOL_VERSION = "2026-07-28"
+LEGACY_PROTOCOL_VERSION = "2025-11-25"
+LEGACY_PROTOCOL_VERSIONS = {"2025-11-25", "2025-06-18", "2024-11-05"}
+MAX_MCP_SERVERS = 8
+MAX_MCP_TOOLS_PER_SERVER = 128
+MAX_MESSAGE_CHARS = 1_000_000
+MAX_TOOL_SCHEMA_CHARS = 64_000
+MAX_TOOL_NAME_LENGTH = 128
+MAX_OUTPUT_CHARS = 48_000
+
+_SAFE_INHERITED_ENV = {
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "TMP",
+    "TEMP",
+    "TMPDIR",
+    "SYSTEMROOT",
+    "WINDIR",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "PATHEXT",
+    "COMSPEC",
+}
+
+
+class MCPServerError(RuntimeError):
+    """An MCP server or its stdio protocol failed."""
+
+
+@dataclass(frozen=True)
+class MCPServerConfig:
+    name: str
+    command: tuple[str, ...]
+    env_passthrough: tuple[str, ...] = ()
+    cwd: str | None = None
+    timeout_seconds: float = 15.0
+
+
+def load_mcp_config(path: Path | str) -> list[MCPServerConfig]:
+    """Load a bounded MCP stdio manifest without executing any command."""
+    config_path = Path(path).expanduser()
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise MCPServerError("MCP configuration could not be read as valid JSON.") from exc
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("servers"), list):
+        raise MCPServerError("MCP configuration must contain a 'servers' array.")
+    rows = payload["servers"]
+    if len(rows) > MAX_MCP_SERVERS:
+        raise MCPServerError(f"At most {MAX_MCP_SERVERS} MCP servers may be configured.")
+
+    configs: list[MCPServerConfig] = []
+    names: set[str] = set()
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise MCPServerError(f"MCP server entry {index} must be an object.")
+        name = row.get("name")
+        command = row.get("command")
+        env_passthrough = row.get("env_passthrough", [])
+        cwd = row.get("cwd")
+        timeout = row.get("timeout_seconds", 15.0)
+
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name):
+            raise MCPServerError(f"MCP server entry {index} has an invalid name.")
+        if name.lower() in names:
+            raise MCPServerError(f"MCP server name '{name}' is duplicated.")
+        names.add(name.lower())
+        if (
+            not isinstance(command, list)
+            or not command
+            or len(command) > 64
+            or not all(isinstance(part, str) and part and "\x00" not in part for part in command)
+        ):
+            raise MCPServerError(
+                f"MCP server '{name}' command must be a non-empty array of strings."
+            )
+        if any(len(part) > 8_192 for part in command):
+            raise MCPServerError(f"MCP server '{name}' command argument is too long.")
+        if (
+            not isinstance(env_passthrough, list)
+            or not all(
+                isinstance(key, str)
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                for key in env_passthrough
+            )
+        ):
+            raise MCPServerError(f"MCP server '{name}' env_passthrough must be an array of variable names.")
+        if cwd is not None and (not isinstance(cwd, str) or not cwd or "\x00" in cwd):
+            raise MCPServerError(f"MCP server '{name}' cwd must be a non-empty path string.")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not 0.5 <= float(timeout) <= 120.0
+        ):
+            raise MCPServerError(f"MCP server '{name}' timeout_seconds must be between 0.5 and 120.")
+
+        configs.append(
+            MCPServerConfig(
+                name=name,
+                command=tuple(command),
+                env_passthrough=tuple(env_passthrough),
+                cwd=cwd,
+                timeout_seconds=float(timeout),
+            )
+        )
+    return configs
+
+
+class MCPStdioClient:
+    """MCP stdio client with 2026 stateless discovery and legacy handshake fallback."""
+
+    def __init__(
+        self,
+        config: MCPServerConfig,
+        *,
+        workspace_root: Path | str,
+        request_timeout_seconds: float | None = None,
+    ) -> None:
+        self.config = config
+        self.workspace_root = Path(workspace_root).expanduser().resolve(strict=True)
+        if not self.workspace_root.is_dir():
+            raise MCPServerError("MCP working directory must be an existing directory.")
+        self.request_timeout_seconds = request_timeout_seconds or config.timeout_seconds
+        if not 0.5 <= self.request_timeout_seconds <= 120:
+            raise ValueError("MCP request timeout must be between 0.5 and 120 seconds.")
+
+        self.process: subprocess.Popen[str] | None = None
+        self.protocol_era: str | None = None
+        self.protocol_version: str | None = None
+        self.server_info: dict[str, Any] = {}
+        self.server_instructions = ""
+        self._responses: queue.Queue[str | BaseException | None] = queue.Queue(maxsize=64)
+        self._reader: threading.Thread | None = None
+        self._request_id = 0
+        self._request_lock = threading.Lock()
+        self._closed = False
+
+    def _process_environment(self) -> dict[str, str]:
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() in _SAFE_INHERITED_ENV
+        }
+        for key in self.config.env_passthrough:
+            value = os.environ.get(key)
+            if value is not None:
+                environment[key] = value
+        environment["NEXTORCA_WORKSPACE_ROOT"] = str(self.workspace_root)
+        return environment
+
+    def _start_process(self) -> None:
+        if self._closed:
+            raise MCPServerError("MCP client is closed.")
+        command = list(self.config.command)
+        cwd = self.workspace_root
+        if self.config.cwd is not None:
+            requested_cwd = Path(self.config.cwd).expanduser()
+            if not requested_cwd.is_absolute():
+                requested_cwd = self.workspace_root / requested_cwd
+            try:
+                cwd = requested_cwd.resolve(strict=True)
+                cwd.relative_to(self.workspace_root)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise MCPServerError(
+                    f"MCP server '{self.config.name}' working directory escapes the workspace."
+                ) from exc
+            if not cwd.is_dir():
+                raise MCPServerError(f"MCP server '{self.config.name}' working directory is not a directory.")
+
+        try:
+            self.process = subprocess.Popen(
+                command,
+                cwd=cwd,
+                env=self._process_environment(),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+                bufsize=1,
+                shell=False,
+            )
+        except (OSError, ValueError) as exc:
+            raise MCPServerError(
+                f"MCP server '{self.config.name}' could not be started."
+            ) from exc
+
+        self._responses = queue.Queue(maxsize=64)
+        self._reader = threading.Thread(
+            target=self._read_stdout,
+            name=f"nextorca-mcp-{self.config.name}",
+            daemon=True,
+        )
+        self._reader.start()
+
+    def _read_stdout(self) -> None:
+        process = self.process
+        if process is None or process.stdout is None:
+            return
+        try:
+            while True:
+                line = process.stdout.readline(MAX_MESSAGE_CHARS + 1)
+                if not line:
+                    self._responses.put(None)
+                    return
+                if len(line) > MAX_MESSAGE_CHARS:
+                    self._responses.put(
+                        MCPServerError("MCP server message exceeded the 1 MB limit.")
+                    )
+                    return
+                self._responses.put(line)
+        except (OSError, UnicodeError, ValueError) as exc:
+            self._responses.put(MCPServerError(f"MCP server stdout failed: {type(exc).__name__}"))
+
+    def _write_message(self, message: dict[str, Any]) -> None:
+        if self.process is None or self.process.stdin is None:
+            raise MCPServerError("MCP server process is not running.")
+        encoded = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded) > MAX_MESSAGE_CHARS:
+            raise MCPServerError("MCP request exceeded the 1 MB message limit.")
+        try:
+            self.process.stdin.write(encoded + "\n")
+            self.process.stdin.flush()
+        except (OSError, BrokenPipeError, UnicodeError) as exc:
+            raise MCPServerError("MCP request could not be written to server stdin.") from exc
+
+    def _request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        with self._request_lock:
+            if self.process is None or self.process.poll() is not None:
+                raise MCPServerError(f"MCP server '{self.config.name}' is not running.")
+            self._request_id += 1
+            request_id = self._request_id
+            request_params = dict(params or {})
+            if self.protocol_era == "modern" or method == "server/discover":
+                request_params["_meta"] = {
+                    "io.modelcontextprotocol/protocolVersion": MODERN_PROTOCOL_VERSION,
+                    "io.modelcontextprotocol/clientInfo": {
+                        "name": "NextOrca",
+                        "version": "0.8.0",
+                    },
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                }
+            request = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "method": method,
+                "params": request_params,
+            }
+            self._write_message(request)
+
+            timeout = timeout_seconds or self.request_timeout_seconds
+            deadline = time.monotonic() + timeout
+            ignored_messages = 0
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise MCPServerError(
+                        f"MCP server '{self.config.name}' timed out handling {method}."
+                    )
+                try:
+                    line = self._responses.get(timeout=remaining)
+                except queue.Empty as exc:
+                    raise MCPServerError(
+                        f"MCP server '{self.config.name}' timed out handling {method}."
+                    ) from exc
+
+                if line is None:
+                    code = self.process.poll() if self.process is not None else None
+                    raise MCPServerError(
+                        f"MCP server '{self.config.name}' closed stdout (exit code {code})."
+                    )
+                if isinstance(line, BaseException):
+                    raise MCPServerError(str(line))
+
+                try:
+                    response = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise MCPServerError("MCP server returned invalid JSON.") from exc
+                if not isinstance(response, dict) or response.get("jsonrpc") != "2.0":
+                    raise MCPServerError("MCP server returned an invalid JSON-RPC message.")
+
+                if "method" in response and "id" not in response:
+                    ignored_messages += 1
+                    if ignored_messages > 128:
+                        raise MCPServerError("MCP server sent too many notifications during a request.")
+                    continue
+                if response.get("id") != request_id:
+                    ignored_messages += 1
+                    if ignored_messages > 128:
+                        raise MCPServerError("MCP server returned too many unrelated messages.")
+                    continue
+                if "error" in response:
+                    error = response.get("error")
+                    if isinstance(error, dict):
+                        code = error.get("code")
+                        message = str(error.get("message", "MCP request failed"))
+                        data = error.get("data")
+                        raise MCPServerError(
+                            f"MCP {method} failed ({code}): {message}; "
+                            f"data={json.dumps(data, ensure_ascii=False)[:2000]}"
+                        )
+                    raise MCPServerError(f"MCP {method} returned a malformed error.")
+                result = response.get("result")
+                if not isinstance(result, dict):
+                    raise MCPServerError(f"MCP {method} returned a non-object result.")
+                return result
+
+    def connect(self) -> None:
+        self._start_process()
+
+        # Probe the modern stateless era first. Legacy servers commonly return
+        # method-not-found or stay silent; those fall back to initialize.
+        try:
+            discovery = self._request(
+                "server/discover",
+                timeout_seconds=min(3.0, self.request_timeout_seconds),
+            )
+            supported = discovery.get("supportedVersions")
+            if not isinstance(supported, list):
+                raise MCPServerError("MCP server/discover omitted supportedVersions.")
+            if MODERN_PROTOCOL_VERSION in supported:
+                self.protocol_era = "modern"
+                self.protocol_version = MODERN_PROTOCOL_VERSION
+            else:
+                legacy_versions = [v for v in supported if v in LEGACY_PROTOCOL_VERSIONS]
+                if legacy_versions:
+                    self.protocol_era = "legacy"
+                    self.protocol_version = legacy_versions[0]
+                else:
+                    raise MCPServerError(
+                        f"MCP server '{self.config.name}' has no mutually supported protocol version."
+                    )
+            self.server_instructions = str(discovery.get("instructions", ""))[:4_000]
+            meta = discovery.get("_meta")
+            if isinstance(meta, dict) and isinstance(meta.get("io.modelcontextprotocol/serverInfo"), dict):
+                self.server_info = meta["io.modelcontextprotocol/serverInfo"]
+            return
+        except MCPServerError:
+            if self.process is not None and self.process.poll() is not None:
+                # Some legacy stdio servers exit on an unknown pre-initialize method.
+                self._stop_process()
+                self._start_process()
+
+        try:
+            result = self._request(
+                "initialize",
+                {
+                    "protocolVersion": LEGACY_PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "NextOrca", "version": "0.8.0"},
+                },
+            )
+        except MCPServerError as exc:
+            raise MCPServerError(
+                f"MCP server '{self.config.name}' supports neither the modern discovery "
+                "flow nor the legacy initialize handshake."
+            ) from exc
+
+        version = result.get("protocolVersion")
+        if version not in LEGACY_PROTOCOL_VERSIONS:
+            raise MCPServerError(
+                f"MCP server '{self.config.name}' negotiated unsupported legacy version."
+            )
+        self.protocol_era = "legacy"
+        self.protocol_version = version
+        self.server_instructions = str(result.get("instructions", ""))[:4_000]
+        info = result.get("serverInfo")
+        if isinstance(info, dict):
+            self.server_info = info
+
+        self._write_message(
+            {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        )
+
+    def list_tools(self) -> list[dict[str, Any]]:
+        if self.protocol_era not in {"modern", "legacy"}:
+            raise MCPServerError("MCP server must be connected before listing tools.")
+        tools: list[dict[str, Any]] = []
+        cursor: str | None = None
+
+        for _ in range(20):
+            params: dict[str, Any] = {}
+            if cursor:
+                params["cursor"] = cursor
+            result = self._request("tools/list", params)
+            page = result.get("tools")
+            if not isinstance(page, list):
+                raise MCPServerError("MCP tools/list response omitted a tools array.")
+            for item in page:
+                if not isinstance(item, dict):
+                    continue
+                tools.append(item)
+                if len(tools) > MAX_MCP_TOOLS_PER_SERVER:
+                    raise MCPServerError(
+                        f"MCP server '{self.config.name}' exposed more than "
+                        f"{MAX_MCP_TOOLS_PER_SERVER} tools."
+                    )
+            cursor = result.get("nextCursor")
+            if not cursor:
+                return tools
+            if not isinstance(cursor, str) or len(cursor) > 2_000:
+                raise MCPServerError("MCP tools/list returned an invalid pagination cursor.")
+        raise MCPServerError("MCP tools/list exceeded the 20-page pagination limit.")
+
+    def call_tool(self, remote_name: str, arguments: dict[str, Any]) -> str:
+        params = {"name": remote_name, "arguments": arguments}
+        result = self._request("tools/call", params)
+        blocks = result.get("content", [])
+        if not isinstance(blocks, list):
+            blocks = []
+        text_parts = [
+            str(block.get("text", ""))
+            for block in blocks
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        structured = result.get("structuredContent")
+        if isinstance(structured, dict):
+            text_parts.append(json.dumps(structured, ensure_ascii=False, indent=2))
+        if not text_parts:
+            text_parts.append("[MCP tool returned no text content.]")
+        response = "\n".join(text_parts)
+        if result.get("isError") is True:
+            response = "MCP tool reported an error:\n" + response
+        return response[:MAX_OUTPUT_CHARS] + (
+            "\n[MCP output truncated]" if len(response) > MAX_OUTPUT_CHARS else ""
+        )
+
+    def register_tools(self, registry: ToolRegistry) -> int:
+        registered = 0
+        for remote_tool in self.list_tools():
+            remote_name = remote_tool.get("name")
+            if (
+                not isinstance(remote_name, str)
+                or not remote_name
+                or len(remote_name) > MAX_TOOL_NAME_LENGTH
+            ):
+                continue
+
+            raw_schema = remote_tool.get("inputSchema")
+            if not isinstance(raw_schema, dict):
+                raise MCPServerError(
+                    f"MCP tool '{remote_name}' has no valid inputSchema."
+                )
+            schema_size = len(json.dumps(raw_schema, ensure_ascii=False))
+            if schema_size > MAX_TOOL_SCHEMA_CHARS:
+                raise MCPServerError(f"MCP tool '{remote_name}' input schema is too large.")
+            if raw_schema.get("type", "object") != "object":
+                raise MCPServerError(
+                    f"MCP tool '{remote_name}' must accept an object input schema."
+                )
+            properties = raw_schema.get("properties", {})
+            required = raw_schema.get("required", [])
+            if not isinstance(properties, dict) or not isinstance(required, list):
+                raise MCPServerError(f"MCP tool '{remote_name}' has an invalid input schema.")
+            for property_name, definition in properties.items():
+                if not isinstance(property_name, str) or not isinstance(definition, dict):
+                    raise MCPServerError(f"MCP tool '{remote_name}' has an unsupported input schema.")
+                if definition.get("type") not in {
+                    "string", "integer", "number", "boolean", "object", "array", "null"
+                }:
+                    raise MCPServerError(
+                        f"MCP tool '{remote_name}' uses an unsupported JSON Schema type."
+                    )
+
+            sanitized_server = re.sub(r"[^A-Za-z0-9_]", "_", self.config.name.lower())
+            sanitized_tool = re.sub(r"[^A-Za-z0-9_]", "_", remote_name.lower())
+            internal_name = f"mcp_{sanitized_server}_{sanitized_tool}"
+            description = str(remote_tool.get("description", "External MCP tool"))[:2_000]
+            namespaced_description = (
+                f"MCP server '{self.config.name}' tool '{remote_name}'. {description}"
+            )[:2_500]
+            schema = dict(raw_schema)
+            schema["type"] = "object"
+            schema["properties"] = properties
+            schema["required"] = required
+            schema.setdefault("additionalProperties", True)
+
+            def prepare(
+                arguments: dict[str, Any],
+                *,
+                tool_name: str = remote_name,
+                schema_name: str = internal_name,
+            ) -> PreparedToolOperation:
+                preview = (
+                    f"External MCP operation: {self.config.name}.{tool_name}\n"
+                    f"Model tool name: {schema_name}\n"
+                    "Arguments (review before approving):\n"
+                    + json.dumps(arguments, ensure_ascii=False, indent=2)[:12_000]
+                )
+                return PreparedToolOperation(
+                    preview=preview,
+                    execute=lambda: self.call_tool(tool_name, arguments),
+                )
+
+            registry.register(
+                ToolSpec(
+                    name=internal_name,
+                    description=namespaced_description,
+                    parameters=schema,
+                    handler=lambda _args: "MCP calls must use the approval pipeline.",
+                    read_only=False,
+                    prepare_handler=prepare,
+                )
+            )
+            registered += 1
+        return registered
+
+    def _stop_process(self) -> None:
+        process = self.process
+        self.process = None
+        if process is None:
+            return
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        try:
+            process.wait(timeout=1.5)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    pass
+        for stream in (process.stdout, process.stdin):
+            if stream is not None and not stream.closed:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._stop_process()
+
+    def __enter__(self) -> "MCPStdioClient":
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self.close()
