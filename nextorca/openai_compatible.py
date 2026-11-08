@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from nextorca.provider import ProviderError
+from nextorca.provider import ProviderError, ProviderUnavailableError
 from nextorca.types import AssistantTurn, ToolCall
 
 
@@ -67,13 +67,15 @@ class OpenAICompatibleProvider:
             response.raise_for_status()
             payload = response.json()
         except httpx.TimeoutException as exc:
-            raise ProviderError("Model provider request timed out.") from exc
+            raise ProviderUnavailableError("Model provider request timed out.") from exc
         except httpx.HTTPStatusError as exc:
-            raise ProviderError(
-                f"Model provider returned HTTP {exc.response.status_code}."
-            ) from exc
-        except (httpx.HTTPError, ValueError) as exc:
-            raise ProviderError("Model provider request failed.") from exc
+            status = exc.response.status_code
+            error_type = ProviderUnavailableError if status in {408, 429} or status >= 500 else ProviderError
+            raise error_type(f"Model provider returned HTTP {status}.") from exc
+        except httpx.HTTPError as exc:
+            raise ProviderUnavailableError("Model provider connection failed.") from exc
+        except ValueError as exc:
+            raise ProviderError("Model provider returned invalid JSON.") from exc
 
         try:
             choice = payload["choices"][0]
