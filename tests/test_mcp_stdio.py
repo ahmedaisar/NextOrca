@@ -9,11 +9,11 @@ import pytest
 
 from nextorca.mcp_stdio import (
     LEGACY_PROTOCOL_VERSION,
-    load_mcp_config,
+    MODERN_PROTOCOL_VERSION,
     MCPServerConfig,
     MCPServerError,
     MCPStdioClient,
-    MODERN_PROTOCOL_VERSION,
+    load_mcp_config,
 )
 from nextorca.tool_registry import ToolExecutionError, ToolRegistry
 
