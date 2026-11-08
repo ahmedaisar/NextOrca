@@ -233,7 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 try:
                     client.connect()
                     registered = client.register_tools(tools)
-                except Exception:
+                except (OSError, ValueError, RuntimeError):
                     client.close()
                     raise
                 if registered == 0:
