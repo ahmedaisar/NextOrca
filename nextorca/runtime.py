@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
+from nextorca.context import ContextBudget, ContextLimitError
 from nextorca.provider import ChatProvider, ProviderError
+from nextorca.session_store import SQLiteSessionStore
 from nextorca.tool_registry import (
     ToolExecutionError,
     ToolRegistry,
@@ -36,6 +39,8 @@ class AgentConfig:
     max_turns: int = 12
     max_tool_calls: int = 40
     max_tool_output_chars: int = 12_000
+    max_context_chars: int = 80_000
+    preserve_recent_messages: int = 8
     system_prompt: str = (
         "You are NextOrca, a careful coding assistant. "
         "Use the available tools to inspect the current workspace. "
@@ -50,13 +55,17 @@ class AgentConfig:
             raise ValueError("max_tool_calls must be at least 1.")
         if self.max_tool_output_chars < 256:
             raise ValueError("max_tool_output_chars must be at least 256.")
+        if self.max_context_chars < 1_024:
+            raise ValueError("max_context_chars must be at least 1024.")
+        if self.preserve_recent_messages < 1:
+            raise ValueError("preserve_recent_messages must be at least 1.")
 
 
 EventHandler = Callable[[AgentEvent], None]
 
 
 class AgentRuntime:
-    """Provider-independent model/tool loop with policy-checked tool execution."""
+    """Provider-independent model/tool loop with safe execution and resumable sessions."""
 
     def __init__(
         self,
@@ -67,6 +76,9 @@ class AgentRuntime:
         permission_policy: PermissionPolicy | None = None,
         config: AgentConfig | None = None,
         on_event: EventHandler | None = None,
+        session_store: SQLiteSessionStore | None = None,
+        workspace_root: Path | str | None = None,
+        session_id: str | None = None,
     ) -> None:
         self.provider = provider
         self.model = model
@@ -74,6 +86,20 @@ class AgentRuntime:
         self.permission_policy = permission_policy or ReadOnlyPermissionPolicy()
         self.config = config or AgentConfig()
         self.on_event = on_event
+        self.session_store = session_store
+        self.session_id = session_id
+        self.last_session_id: str | None = None
+        if session_store is not None and workspace_root is None:
+            raise ValueError("workspace_root is required when persistent sessions are enabled.")
+        self.workspace_root = (
+            str(Path(workspace_root).expanduser().resolve(strict=True))
+            if workspace_root is not None
+            else None
+        )
+        self.context_budget = ContextBudget(
+            max_chars=self.config.max_context_chars,
+            preserve_recent_messages=self.config.preserve_recent_messages,
+        )
 
     def _emit(self, event_type: str, **data: Any) -> None:
         if self.on_event is not None:
@@ -112,22 +138,92 @@ class AgentRuntime:
             ]
         return message
 
-    def run(self, prompt: str) -> str:
+    def _append_message(
+        self,
+        messages: list[dict[str, Any]],
+        session_id: str | None,
+        message: dict[str, Any],
+    ) -> None:
+        messages.append(message)
+        if session_id and self.session_store is not None:
+            self.session_store.append_message(session_id, message)
+
+    def _load_or_create_session(
+        self,
+        prompt: str,
+        requested_session_id: str | None,
+    ) -> tuple[str | None, list[dict[str, Any]]]:
+        if self.session_store is None:
+            if requested_session_id:
+                raise ValueError("A session ID cannot be used without a session store.")
+            return None, [
+                {"role": "system", "content": self.config.system_prompt},
+                {"role": "user", "content": prompt},
+            ]
+
+        assert self.workspace_root is not None
+        identifier = requested_session_id or self.session_id
+        if identifier:
+            self.session_store.ensure_session(
+                identifier,
+                workspace=self.workspace_root,
+                model=self.model,
+            )
+        else:
+            identifier = self.session_store.create_session(
+                workspace=self.workspace_root,
+                model=self.model,
+            )
+        self.session_id = identifier
+        self.last_session_id = identifier
+        messages = self.session_store.load_messages(identifier)
+        if not messages:
+            self._append_message(
+                messages,
+                identifier,
+                {"role": "system", "content": self.config.system_prompt},
+            )
+        elif messages[0].get("role") != "system":
+            raise AgentRuntimeError("Persistent session is missing its system message.")
+        self._append_message(
+            messages,
+            identifier,
+            {"role": "user", "content": prompt},
+        )
+        return identifier, messages
+
+    def run(self, prompt: str, *, session_id: str | None = None) -> str:
         if not prompt or not prompt.strip():
             raise ValueError("A non-empty prompt is required.")
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self.config.system_prompt},
-            {"role": "user", "content": prompt},
-        ]
+        active_session_id, messages = self._load_or_create_session(prompt, session_id)
         tool_calls_executed = 0
         schemas = self.tools.provider_tools()
 
         for turn_index in range(self.config.max_turns):
+            try:
+                provider_messages, report = self.context_budget.fit(messages)
+            except ContextLimitError:
+                self._emit("context_limit_error", max_chars=self.config.max_context_chars)
+                raise
+            if report.pruned_messages:
+                checkpoint = {
+                    "original_chars": report.original_chars,
+                    "context_chars": report.final_chars,
+                    "pruned_messages": report.pruned_messages,
+                }
+                self._emit("context_pruned", **checkpoint)
+                if active_session_id and self.session_store is not None:
+                    self.session_store.append_event(
+                        active_session_id,
+                        "context_pruned",
+                        checkpoint,
+                    )
+
             self._emit("model_turn_started", turn=turn_index + 1)
             try:
                 response = self.provider.complete(
                     model=self.model,
-                    messages=messages,
+                    messages=provider_messages,
                     tools=schemas,
                 )
             except ProviderError:
@@ -137,7 +233,8 @@ class AgentRuntime:
 
             if not isinstance(response, AssistantTurn):
                 raise AgentRuntimeError("Provider returned an invalid normalized response.")
-            messages.append(self._assistant_message(response))
+            assistant_message = self._assistant_message(response)
+            self._append_message(messages, active_session_id, assistant_message)
             self._emit(
                 "model_turn_completed",
                 turn=turn_index + 1,
@@ -153,13 +250,15 @@ class AgentRuntime:
                     raise AgentRuntimeError("Maximum tool-call budget exceeded.")
                 self._emit("tool_started", tool=call.name, call_id=call.id)
                 result = self._tool_result(call)
-                messages.append(
+                self._append_message(
+                    messages,
+                    active_session_id,
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
                         "name": call.name,
                         "content": result,
-                    }
+                    },
                 )
 
         raise AgentRuntimeError(

@@ -242,7 +242,7 @@ export NEXTORCA_MODEL=your-provider/model
 uv run nextorca --workspace ./data/repos/tqdm "Map the main package structure."
 ```
 
-The runtime accepts `--base-url`, `--model`, `--api-key`, `--workspace` and `--max-turns`; `NEXTORCA_BASE_URL`, `NEXTORCA_API_KEY` and `NEXTORCA_MODEL` can supply defaults. Use `--verbose` to emit structured turn/tool events to stderr.
+The runtime accepts `--base-url`, `--model`, `--api-key`, `--workspace` and `--max-turns`; `NEXTORCA_BASE_URL`, `NEXTORCA_API_KEY` and `NEXTORCA_MODEL` can supply defaults. Use `--verbose` to emit structured turn/tool events to stderr. Each run also prints a session ID to stderr; pass it back with `--session-id` to resume. The default SQLite database is `~/.nextorca/sessions.sqlite3` and can be changed with `--session-db` or `NEXTORCA_SESSION_DB`. Session files are written with owner-only database permissions. The runtime preserves system/user messages and recent turns; when the context budget is exceeded, it elides older tool output and assistant prose and records a `context_pruned` checkpoint. It errors rather than silently dropping required user/system context.
 
 **Current boundary:** the independent runtime is an experimental preview. Its built-in tools are read-only; paths are confined to the selected workspace; unknown tool names and invalid arguments are rejected; execution defaults to a read-only permission policy. It currently uses non-streaming OpenAI Chat Completions-compatible requests and does not yet include persistent sessions, context compaction, edit/write tools, interactive approval UX or a sandbox for arbitrary commands. The existing hybrid proxy remains available for the LocoOperator sub-agent integration.
 

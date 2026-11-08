@@ -9,6 +9,7 @@ from pathlib import Path
 
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.runtime import AgentConfig, AgentRuntime
+from nextorca.session_store import SQLiteSessionStore
 from nextorca.workspace import Workspace, build_workspace_tools
 
 
@@ -39,6 +40,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("NEXTORCA_API_KEY"),
         help="Provider API key (prefer NEXTORCA_API_KEY environment variable).",
     )
+    parser.add_argument(
+        "--session-db",
+        type=Path,
+        default=Path(
+            os.environ.get(
+                "NEXTORCA_SESSION_DB",
+                str(Path.home() / ".nextorca" / "sessions.sqlite3"),
+            )
+        ),
+        help="SQLite session database path.",
+    )
+    parser.add_argument(
+        "--session-id",
+        default=os.environ.get("NEXTORCA_SESSION_ID"),
+        help="Resume an existing session ID.",
+    )
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--verbose", action="store_true", help="Print structured agent events to stderr.")
     return parser
@@ -62,8 +79,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if args.verbose
             else None,
+            session_store=SQLiteSessionStore(args.session_db),
+            workspace_root=workspace.root,
+            session_id=args.session_id,
         )
         answer = runtime.run(args.prompt)
+        if runtime.last_session_id:
+            print(f"Session ID: {runtime.last_session_id}", file=sys.stderr)
         print(answer)
         return 0
     except (OSError, ValueError, RuntimeError) as exc:
