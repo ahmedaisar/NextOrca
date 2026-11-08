@@ -8,7 +8,6 @@ Anthropic SSE adapter is available.
 
 from __future__ import annotations
 
-import hmac
 import json
 import os
 import threading
@@ -18,6 +17,8 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+
+from proxy_security import RequestValidationError, authorization_matches, parse_content_length
 
 from agent_protocol import (
     ToolCallParseError,
@@ -37,6 +38,7 @@ REMOTE_FALLBACK_MODEL = os.environ.get("NEXTORCA_REMOTE_MODEL", "qwen/qwen3-code
 MAX_LOCAL_TURNS = int(os.environ.get("NEXTORCA_MAX_LOCAL_TURNS", "10"))
 MAX_REQUEST_BYTES = int(os.environ.get("NEXTORCA_MAX_REQUEST_BYTES", str(2 * 1024 * 1024)))
 MAX_CONCURRENT_REQUESTS = int(os.environ.get("NEXTORCA_MAX_CONCURRENT_REQUESTS", "4"))
+MAX_CONCURRENT_CONNECTIONS = int(os.environ.get("NEXTORCA_MAX_CONCURRENT_CONNECTIONS", "32"))
 REQUEST_TIMEOUT = float(os.environ.get("NEXTORCA_REQUEST_TIMEOUT_SECONDS", "300"))
 
 TOKEN_FILE = PROJECT_ROOT / ".claude" / "proxy-token"
@@ -45,7 +47,7 @@ try:
 except OSError:
     PROXY_TOKEN = ""
 
-if MAX_REQUEST_BYTES <= 0 or MAX_CONCURRENT_REQUESTS <= 0 or MAX_LOCAL_TURNS <= 0:
+if (MAX_REQUEST_BYTES <= 0 or MAX_CONCURRENT_REQUESTS <= 0\n        or MAX_CONCURRENT_CONNECTIONS <= 0 or MAX_LOCAL_TURNS <= 0):
     raise ValueError("Proxy request, concurrency and turn limits must be positive.")
 
 _local_client = httpx.Client(
@@ -186,11 +188,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
             _json_error(self, 503, "Local proxy authentication is not configured; run setup.")
             return
 
-        authorization = self.headers.get("Authorization", "")
-        scheme, separator, candidate = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not separator:
-            candidate = self.headers.get("x-api-key", "")
-        if not candidate or not hmac.compare_digest(candidate, PROXY_TOKEN):
+        if not authorization_matches(
+            self.headers.get("Authorization", ""),
+            self.headers.get("x-api-key", ""),
+            PROXY_TOKEN,
+        ):
             _json_error(self, 401, "Unauthorized")
             return
 
@@ -198,15 +200,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
             _json_error(self, 400, "Transfer-encoded requests are not supported.")
             return
         try:
-            length = int(self.headers.get("Content-Length", ""))
-        except ValueError:
-            _json_error(self, 411, "A valid Content-Length header is required.")
-            return
-        if length < 1:
-            _json_error(self, 400, "Request body must not be empty.")
-            return
-        if length > MAX_REQUEST_BYTES:
-            _json_error(self, 413, "Request body exceeds the configured size limit.")
+            length = parse_content_length(
+                self.headers.get("Content-Length"), MAX_REQUEST_BYTES
+            )
+        except RequestValidationError as exc:
+            _json_error(self, exc.status_code, str(exc))
             return
         if not _request_slots.acquire(blocking=False):
             _json_error(
@@ -353,6 +351,37 @@ class ProxyHandler(BaseHTTPRequestHandler):
 class ProxyServer(ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 32
+
+    def __init__(self, server_address: tuple[str, int], handler_class: type[BaseHTTPRequestHandler]):
+        self._worker_slots = threading.BoundedSemaphore(MAX_CONCURRENT_CONNECTIONS)
+        super().__init__(server_address, handler_class)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._worker_slots.acquire(blocking=False):
+            payload = b'{"error":"proxy connection capacity reached"}'
+            response = (
+                b"HTTP/1.1 503 Service Unavailable\\r\\n"
+                b"Content-Type: application/json\\r\\n"
+                b"Content-Length: " + str(len(payload)).encode() + b"\\r\\n"
+                b"Connection: close\\r\\n"
+                b"Retry-After: 2\\r\\n\\r\\n" + payload
+            )
+            try:
+                request.sendall(response)
+            finally:
+                self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._worker_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._worker_slots.release()
 
 
 if __name__ == "__main__":

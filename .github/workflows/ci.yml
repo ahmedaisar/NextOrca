@@ -13,7 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --extra dev
-      - run: uv run ruff check scripts/agent_protocol.py scripts/generate_claude_settings.py tests
+      - run: uv run ruff check scripts/agent_protocol.py scripts/generate_claude_settings.py scripts/proxy_security.py tests
       - name: Check shell syntax
         run: |
           for script in scripts/setup.sh scripts/analyze.sh scripts/test_single.sh scripts/start_services.sh; do
