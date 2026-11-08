@@ -353,14 +353,9 @@ class MCPStdioClient:
                 self.protocol_era = "modern"
                 self.protocol_version = MODERN_PROTOCOL_VERSION
             else:
-                legacy_versions = [v for v in supported if v in LEGACY_PROTOCOL_VERSIONS]
-                if legacy_versions:
-                    self.protocol_era = "legacy"
-                    self.protocol_version = legacy_versions[0]
-                else:
-                    raise MCPServerError(
-                        f"MCP server '{self.config.name}' has no mutually supported protocol version."
-                    )
+                raise MCPServerError(
+                    f"MCP server '{self.config.name}' has no mutually supported modern protocol version."
+                )
             self.server_instructions = str(discovery.get("instructions", ""))[:4_000]
             meta = discovery.get("_meta")
             if isinstance(meta, dict) and isinstance(meta.get("io.modelcontextprotocol/serverInfo"), dict):
