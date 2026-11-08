@@ -5,6 +5,7 @@ import shutil
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import ClassVar
 
 
 class SandboxError(RuntimeError):
@@ -15,7 +16,7 @@ class LinuxBubblewrapSandbox:
     """Fail-closed Linux process sandbox backed by bubblewrap."""
 
     SANDBOX_PATH = "/usr/local/bin:/usr/bin:/bin"
-    OUTER_ENV = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+    OUTER_ENV: ClassVar[dict[str, str]] = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
     SYSTEM_PATHS = ("/usr", "/bin", "/sbin", "/lib", "/lib64")
     MAX_TMP_BYTES = 128 * 1024 * 1024
 
