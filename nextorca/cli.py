@@ -116,6 +116,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="List checkpoints for this workspace without contacting a model provider.",
     )
+    operations.add_argument(
+        "--session-stats",
+        action="store_true",
+        help="Show local provider, latency and token metrics for this workspace/session.",
+    )
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument(
         "--verbose",
@@ -137,6 +142,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.list_checkpoints:
             print(json.dumps(workspace.list_checkpoints(session_store), indent=2))
+            return 0
+        if args.session_stats:
+            print(
+                json.dumps(
+                    session_store.metrics_summary(
+                        workspace=str(workspace.root),
+                        session_id=args.session_id,
+                    ),
+                    indent=2,
+                )
+            )
             return 0
         if not args.prompt:
             parser.error("provide a prompt, --undo-checkpoint, or --list-checkpoints")
