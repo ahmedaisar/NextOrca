@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from nextorca.context import ContextBudget, ContextLimitError
 
 
@@ -18,7 +20,7 @@ def test_context_budget_prunes_old_tool_output_but_keeps_recent_messages():
 
     assert report.original_chars > report.final_chars
     assert report.pruned_messages == 1
-    assert len(__import__("json").dumps(compacted)) <= 1_500
+    assert len(json.dumps(compacted)) <= 1_500
     assert compacted[1]["content"].startswith("[Earlier tool output omitted")
     assert compacted[3]["content"] == "Current user request."
     assert messages[1]["content"] == original
