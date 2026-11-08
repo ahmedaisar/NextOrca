@@ -307,27 +307,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             system_prompt += " Shell execution is unavailable in one-shot mode."
+        def handle_event(event):
+            if event.type == "assistant_delta" and interactive:
+                print(event.data.get("content", ""), end="", flush=True)
+                return
+            if args.verbose:
+                print(json.dumps({"type": event.type, **event.data}), file=sys.stderr)
+            elif interactive and event.type in {
+                "tool_started", "tool_completed", "tool_denied", "tool_error"
+            }:
+                detail = event.data.get("tool", event.type)
+                suffix = (
+                    f" ({event.data.get('output_chars')} chars)"
+                    if event.type == "tool_completed"
+                    else ""
+                )
+                print(f"  {detail}{suffix}", file=sys.stderr)
+
         runtime = AgentRuntime(
             provider=provider,
             model=runtime_model,
             tools=tools,
             permission_policy=policy,
             config=AgentConfig(max_turns=args.max_turns, system_prompt=system_prompt),
-            on_event=(
-                lambda event: (
-                    print(json.dumps({"type": event.type, **event.data}), file=sys.stderr)
-                    if args.verbose
-                    else print(
-                        f"  {event.data.get('tool', event.type)}"
-                        + (f" ({event.data.get('output_chars')} chars)" if event.type == "tool_completed" else ""),
-                        file=sys.stderr,
-                    )
-                    if interactive and event.type in {"tool_started", "tool_completed", "tool_denied", "tool_error"}
-                    else None
-                )
-            )
-            if args.verbose or interactive
-            else None,
+            on_event=handle_event if args.verbose or interactive else None,
             session_store=session_store,
             workspace_root=workspace.root,
             session_id=args.session_id,

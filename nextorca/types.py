@@ -24,6 +24,14 @@ class AssistantTurn:
 
 
 @dataclass(frozen=True)
+class ProviderStreamChunk:
+    """Incremental provider output or the normalized completed assistant turn."""
+
+    content_delta: str = ""
+    final_turn: AssistantTurn | None = None
+
+
+@dataclass(frozen=True)
 class AgentEvent:
     """Structured event emitted by the agent loop."""
 

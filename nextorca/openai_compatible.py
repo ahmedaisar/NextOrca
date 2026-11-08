@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
 
 from nextorca.provider import ProviderError, ProviderUnavailableError
-from nextorca.types import AssistantTurn, ToolCall
+from nextorca.types import AssistantTurn, ProviderStreamChunk, ToolCall
 
 
 class OpenAICompatibleProvider:

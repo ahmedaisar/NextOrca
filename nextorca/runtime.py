@@ -16,7 +16,7 @@ from nextorca.tool_registry import (
     ToolSpec,
     ToolValidationError,
 )
-from nextorca.types import AgentEvent, AssistantTurn, ToolCall
+from nextorca.types import AgentEvent, AssistantTurn, ProviderStreamChunk, ToolCall
 
 
 class AgentRuntimeError(RuntimeError):
@@ -102,6 +102,7 @@ class AgentRuntime:
         self.session_store = session_store
         self.session_id = session_id
         self.last_session_id: str | None = None
+        self.last_turn_streamed = False
         if session_store is not None and workspace_root is None:
             raise ValueError("workspace_root is required when persistent sessions are enabled.")
         self.workspace_root = (
@@ -263,9 +264,36 @@ class AgentRuntime:
                 # Telemetry persistence must not discard a valid model response.
                 self._emit("metrics_persist_failed", turn=turn)
 
+    def _complete_provider(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> AssistantTurn:
+        stream_method = getattr(self.provider, "stream_complete", None)
+        if not callable(stream_method):
+            return self.provider.complete(model=model, messages=messages, tools=tools)
+
+        final_turn: AssistantTurn | None = None
+        for chunk in stream_method(model=model, messages=messages, tools=tools):
+            if not isinstance(chunk, ProviderStreamChunk):
+                raise ProviderError("Provider returned an invalid streaming chunk.")
+            if chunk.content_delta:
+                self.last_turn_streamed = True
+                self._emit("assistant_delta", content=chunk.content_delta)
+            if chunk.final_turn is not None:
+                if final_turn is not None:
+                    raise ProviderError("Provider returned multiple final streaming turns.")
+                final_turn = chunk.final_turn
+        if final_turn is None:
+            raise ProviderError("Provider stream ended without a completed assistant turn.")
+        return final_turn
+
     def run(self, prompt: str, *, session_id: str | None = None) -> str:
         if not prompt or not prompt.strip():
             raise ValueError("A non-empty prompt is required.")
+        self.last_turn_streamed = False
         active_session_id, messages = self._load_or_create_session(prompt, session_id)
         tool_calls_executed = 0
         schemas = self.tools.provider_tools()
@@ -293,7 +321,7 @@ class AgentRuntime:
             self._emit("model_turn_started", turn=turn_index + 1)
             provider_started_at = time.perf_counter()
             try:
-                response = self.provider.complete(
+                response = self._complete_provider(
                     model=self.model,
                     messages=provider_messages,
                     tools=schemas,
