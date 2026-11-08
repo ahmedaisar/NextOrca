@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, ClassVar, Self
+from typing import Any, Self
 
 from nextorca.sandbox import LinuxBubblewrapSandbox, SandboxError
 from nextorca.tool_registry import (
