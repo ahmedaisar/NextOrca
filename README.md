@@ -265,6 +265,23 @@ NextOrca can connect to explicitly configured MCP stdio servers. MCP is disabled
 sudo apt-get install bubblewrap
 ```
 
+On Ubuntu 24.04 and later, AppArmor may also block the unprivileged user namespaces Bubblewrap needs. If Bubblewrap reports `setting up uid map: Permission denied`, install a profile scoped to Bubblewrap rather than disabling the system-wide user-namespace restriction:
+
+```bash
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+This grants the namespace permission to `/usr/bin/bwrap` only; do not disable AppArmor's global user-namespace restriction as a workaround.
+
 NextOrca fails closed when Bubblewrap is missing or on unsupported operating systems; it never falls back to running an MCP server directly on the host. The sandbox uses isolated Linux namespaces, drops Linux capabilities, exposes a minimal read-only system filesystem and mounts the configured workspace read-only. Network access is disabled by default. Set `network_access: true` only for a server you trust that needs network access.
 
 Start from the example manifest and replace the sample command with the executable and server script you have installed:
