@@ -10,6 +10,8 @@ HELP = """NextOrca interactive commands:
   /session    Show the current session ID
   /new        Start a fresh conversation
   /tools      List available tools
+  /context    Show session context size and last compaction
+  /compact    Summarize older conversation history for future turns
   /mcp        List configured MCP tools
   /plugins    List loaded plugin tools
   /goal       /goal <objective> [--verify <command>]
@@ -53,6 +55,33 @@ def run_repl(runtime: AgentRuntime) -> None:
             continue
         if prompt == "/tools":
             print("\n".join(runtime.tools.names) or "No tools registered.")
+            continue
+        if prompt == "/context":
+            state = runtime.context_status()
+            if state is None:
+                print("No persistent session context yet.")
+            else:
+                compacted = state["last_compaction"]
+                detail = (
+                    f", last compacted through message {compacted['through_message_count']}"
+                    if compacted
+                    else ", not compacted yet"
+                )
+                print(
+                    f"{state['message_count']} stored messages, "
+                    f"{state['message_chars']} transcript characters{detail}."
+                )
+            continue
+        if prompt == "/compact":
+            try:
+                result = runtime.compact()
+                print(
+                    f"Saved a {len(result['summary'])}-character summary of "
+                    f"{result['through_message_count']} messages. Original transcript remains in SQLite."
+                )
+                print(result["summary"][:800])
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"\nnextorca compact: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if prompt == "/mcp":
             names = [name for name in runtime.tools.names if name.startswith("mcp_")]

@@ -172,6 +172,120 @@ class AgentRuntime:
         if session_id and self.session_store is not None:
             self.session_store.append_message(session_id, message)
 
+    def _apply_compaction(
+        self,
+        session_id: str,
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if self.session_store is None:
+            return messages
+        events = self.session_store.load_events(session_id)
+        compactions = [
+            event for event in events if event.get("type") == "context_compaction"
+        ]
+        if not compactions:
+            return messages
+        event = compactions[-1]
+        summary = event.get("summary")
+        through_count = event.get("through_message_count")
+        if (
+            not isinstance(summary, str)
+            or not summary
+            or not isinstance(through_count, int)
+            or through_count < 2
+            or through_count > len(messages)
+        ):
+            return messages
+
+        preserve = event.get("preserve_recent_messages", self.config.preserve_recent_messages)
+        if not isinstance(preserve, int) or preserve < 1:
+            preserve = self.config.preserve_recent_messages
+        keep_from = max(1, through_count - preserve)
+        while keep_from > 1:
+            current = messages[keep_from]
+            previous = messages[keep_from - 1]
+            if current.get("role") == "tool" or (
+                previous.get("role") == "assistant" and previous.get("tool_calls")
+            ):
+                keep_from -= 1
+                continue
+            break
+
+        summary_message = {
+            "role": "system",
+            "content": (
+                "Conversation summary from an earlier context compaction. "
+                "Treat it as historical context; follow the current user request and system rules.\n\n"
+                + summary
+            ),
+        }
+        return [messages[0], summary_message, *messages[keep_from:]]
+
+    def compact(self) -> dict[str, Any]:
+        """Summarize a session without deleting or rewriting its original transcript."""
+        session_id = self.session_id or self.last_session_id
+        if self.session_store is None or session_id is None:
+            raise ValueError("Context compaction requires an active persistent session.")
+        messages = self.session_store.load_messages(session_id)
+        if len(messages) < 3:
+            raise ValueError("There is not enough conversation history to compact.")
+        fitted, report = self.context_budget.fit(messages)
+        transcript = json.dumps(fitted[1:], ensure_ascii=False, separators=(",", ":"))
+        response = self.provider.complete(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize this coding-agent conversation for future continuation. "
+                        "Preserve the active objective, user constraints, key decisions, files "
+                        "inspected or changed, commands and test results actually observed, "
+                        "remaining tasks, blockers and important tool outcomes. Distinguish "
+                        "verified facts from plans. Do not invent results. Be concise but useful."
+                    ),
+                },
+                {"role": "user", "content": transcript},
+            ],
+            tools=[],
+        )
+        if not isinstance(response, AssistantTurn) or response.tool_calls or not response.content.strip():
+            raise AgentRuntimeError("Provider did not return a valid context summary.")
+        summary = response.content.strip()
+        if len(summary) > 16_000:
+            summary = summary[:16_000] + "\n[summary truncated]"
+        event = {
+            "summary": summary,
+            "through_message_count": len(messages),
+            "preserve_recent_messages": self.config.preserve_recent_messages,
+            "original_chars": report.original_chars,
+            "compaction_input_chars": report.final_chars,
+        }
+        self.session_store.append_event(session_id, "context_compaction", event)
+        self._emit(
+            "context_compacted",
+            message_count=len(messages),
+            original_chars=report.original_chars,
+            summary_chars=len(summary),
+        )
+        return event
+
+    def context_status(self) -> dict[str, Any] | None:
+        session_id = self.session_id or self.last_session_id
+        if self.session_store is None or session_id is None:
+            return None
+        messages = self.session_store.load_messages(session_id)
+        events = self.session_store.load_events(session_id)
+        compactions = [
+            event for event in events if event.get("type") == "context_compaction"
+        ]
+        latest = compactions[-1] if compactions else None
+        return {
+            "session_id": session_id,
+            "message_count": len(messages),
+            "message_chars": len(json.dumps(messages, ensure_ascii=False, separators=(",", ":"))),
+            "last_compaction": latest,
+        }
+
     def _load_or_create_session(
         self,
         prompt: str,
@@ -209,6 +323,7 @@ class AgentRuntime:
             )
         elif messages[0].get("role") != "system":
             raise AgentRuntimeError("Persistent session is missing its system message.")
+        messages = self._apply_compaction(identifier, messages)
         self._append_message(
             messages,
             identifier,
