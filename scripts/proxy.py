@@ -27,6 +27,14 @@ from proxy_security import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
+try:
+    WORKSPACE_ROOT = Path(
+        os.environ.get("NEXTORCA_WORKSPACE_ROOT", str(PROJECT_ROOT))
+    ).expanduser().resolve(strict=True)
+except (OSError, RuntimeError) as exc:
+    raise RuntimeError("NEXTORCA_WORKSPACE_ROOT must identify an existing directory.") from exc
+if not WORKSPACE_ROOT.is_dir():
+    raise RuntimeError("NEXTORCA_WORKSPACE_ROOT must identify an existing directory.")
 
 LLAMA_SERVER = os.environ.get("LLAMA_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
 OPENROUTER_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api").rstrip("/")
@@ -60,8 +68,10 @@ _remote_client = httpx.Client(
 )
 _request_slots = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
 
-TRAINING_SYSTEM_PROMPT = """You are a read-only codebase exploration specialist.
-Use Read, Glob, and Grep for repository discovery. Avoid destructive commands.
+TRAINING_SYSTEM_PROMPT = """You are a strictly read-only codebase exploration specialist.
+You may ONLY call these tools: Read, Glob, Grep.
+Never call Bash, Write, Edit, Task, or any other tool.
+All file paths and search roots must remain inside the configured workspace.
 For each tool call, emit a JSON object inside <tool_call></tool_call> tags:
 <tool_call>
 {"name": "<tool-name>", "arguments": {}}
@@ -170,6 +180,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     "local_ready": bool(LLAMA_SERVER),
                     "remote_configured": bool(OPENROUTER_KEY),
                     "proxy_auth_configured": bool(PROXY_TOKEN),
+                    "workspace_root": str(WORKSPACE_ROOT),
                 }
             ).encode()
             self.send_response(200)
@@ -331,7 +342,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     return
                 raise ValueError("Local provider returned an invalid response.")
 
-            converted = openai_to_anthropic_response(local_response)
+            converted = openai_to_anthropic_response(
+                local_response, workspace_root=WORKSPACE_ROOT
+            )
             payload = json.dumps(converted).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -339,7 +352,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
         except ToolCallParseError:
-            _json_error(self, 502, "Local model returned an invalid tool-call envelope.")
+            print("[proxy] local response rejected by read-only workspace policy; escalating")
+            fallback = dict(body)
+            fallback["model"] = REMOTE_FALLBACK_MODEL
+            self._handle_remote(json.dumps(fallback).encode(), is_stream)
         except httpx.TimeoutException:
             _json_error(self, 504, "Local model request timed out.")
         except httpx.HTTPError:

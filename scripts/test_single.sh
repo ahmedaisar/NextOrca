@@ -21,6 +21,7 @@ if [ ! -d "$REPO_DIR" ]; then
   exit 1
 fi
 
+export NEXTORCA_WORKSPACE_ROOT="$REPO_DIR"
 source "$PROJ_DIR/scripts/start_services.sh"
 mkdir -p "$OUTPUT_DIR"
 
