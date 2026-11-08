@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 
 from nextorca.goals import GoalRunner
+from nextorca.routing import HybridRouter
 from nextorca.runtime import AgentRuntime
 
 HELP = """NextOrca interactive commands:
@@ -10,6 +11,8 @@ HELP = """NextOrca interactive commands:
   /session    Show the current session ID
   /new        Start a fresh conversation
   /tools      List available tools
+  /route      Show or set auto/local/cloud routing
+  /privacy    Show or set balanced/local-only privacy
   /context    Show session context size and last compaction
   /compact    Summarize older conversation history for future turns
   /mcp        List configured MCP tools
@@ -24,8 +27,16 @@ Ctrl-C interrupts the current request; Ctrl-D exits."""
 
 def run_repl(runtime: AgentRuntime) -> None:
     """Run a persistent terminal conversation over the normal agent runtime."""
+    if isinstance(runtime.provider, HybridRouter):
+        profile = (
+            f"hybrid/{runtime.provider.route_mode} · {runtime.provider.privacy_mode} · "
+            f"local={runtime.provider.local_model or 'off'} · "
+            f"cloud={runtime.provider.cloud_model or 'off'}"
+        )
+    else:
+        profile = runtime.model
     print(
-        f"NextOrca · {runtime.model} · workspace {runtime.workspace_root or 'current'}"
+        f"NextOrca · {profile} · workspace {runtime.workspace_root or 'current'}"
         "\nType /help for commands. File edits and shell commands ask before running."
     )
     while True:
@@ -55,6 +66,53 @@ def run_repl(runtime: AgentRuntime) -> None:
             continue
         if prompt == "/tools":
             print("\n".join(runtime.tools.names) or "No tools registered.")
+            continue
+        if prompt == "/route" or prompt.startswith("/route "):
+            if not isinstance(runtime.provider, HybridRouter):
+                print("This session uses one provider. Restart with --route-mode auto to enable hybrid routing.")
+                continue
+            argument = prompt[len("/route"):].strip()
+            if not argument or argument == "status":
+                print(
+                    f"{runtime.provider.route_mode} routing; "
+                    f"local={runtime.provider.local_model or 'off'}, "
+                    f"cloud={runtime.provider.cloud_model or 'off'}."
+                )
+                continue
+            if argument not in {"auto", "local", "cloud"}:
+                print("Usage: /route [auto|local|cloud]")
+                continue
+            if argument == "local" and runtime.provider.local_provider is None:
+                print("No local provider is configured.")
+                continue
+            if argument == "cloud" and runtime.provider.cloud_provider is None:
+                print("No cloud provider is configured.")
+                continue
+            if argument == "cloud" and runtime.provider.privacy_mode == "local-only":
+                print("Cloud routing is blocked by local-only privacy mode.")
+                continue
+            runtime.provider.route_mode = argument
+            print(f"Routing set to {argument}.")
+            continue
+        if prompt == "/privacy" or prompt.startswith("/privacy "):
+            if not isinstance(runtime.provider, HybridRouter):
+                print("Privacy routing controls require hybrid mode.")
+                continue
+            argument = prompt[len("/privacy"):].strip()
+            if not argument or argument == "status":
+                print(f"Privacy mode: {runtime.provider.privacy_mode}.")
+                continue
+            if argument not in {"balanced", "local-only"}:
+                print("Usage: /privacy [balanced|local-only]")
+                continue
+            if argument == "local-only" and runtime.provider.local_provider is None:
+                print("Local-only mode requires a configured local provider.")
+                continue
+            if argument == "local-only" and runtime.provider.route_mode == "cloud":
+                print("Set /route auto or /route local before enabling local-only privacy.")
+                continue
+            runtime.provider.privacy_mode = argument
+            print(f"Privacy mode set to {argument}.")
             continue
         if prompt == "/context":
             state = runtime.context_status()
