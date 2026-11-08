@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any, Callable, Protocol
 
 from nextorca.provider import ChatProvider, ProviderError
@@ -103,7 +104,7 @@ class AgentRuntime:
                     "type": "function",
                     "function": {
                         "name": call.name,
-                        "arguments": __import__("json").dumps(call.arguments),
+                        "arguments": json.dumps(call.arguments),
                     },
                 }
                 for call in turn.tool_calls
