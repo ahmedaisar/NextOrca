@@ -208,11 +208,12 @@ def test_mcp_tool_schema_rejects_non_object_arguments(tmp_path):
         '"type": "object",\n                        "properties": {"text": {"type": "string", "minLength": 1}},',
         '"type": "array",\n                        "properties": {},',
     )
-    with _client(script, tmp_path, "schema") as client:
-        with pytest.raises(MCPServerError, match="must accept an object"):
-            client.list_tools()
-            # list_tools only returns server schema; registration validates it.
-            client.register_tools(ToolRegistry())
+    with _client(script, tmp_path, "schema") as client, pytest.raises(
+        MCPServerError, match="must accept an object"
+    ):
+        client.list_tools()
+        # list_tools returns the server schema; registration validates its shape.
+        client.register_tools(ToolRegistry())
 
 
 def test_mcp_server_process_is_closed_on_context_exit(tmp_path):
@@ -247,9 +248,8 @@ def test_modern_input_required_response_is_rejected(tmp_path):
         '"resultType": "input_required",\n                "tools":',
     )
     client = _client(script, tmp_path, "input-required")
-    with client:
-        with pytest.raises(MCPServerError, match="interactive protocol input"):
-            client.list_tools()
+    with client, pytest.raises(MCPServerError, match="interactive protocol input"):
+        client.list_tools()
 
 
 def test_remote_tool_schema_validates_nested_arguments(tmp_path):
