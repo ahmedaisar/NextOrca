@@ -172,3 +172,19 @@ def test_bubblewrap_runtime_enforces_read_only_workspace(tmp_path):
     )
     assert completed.returncode == 0, completed.stderr
     assert "workspace-read-only" in completed.stdout
+
+
+def test_workspace_executable_is_rewritten_to_sandbox_path(tmp_path):
+    script = tmp_path / "bin" / "inspect"
+    script.parent.mkdir()
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.chmod(0o755)
+    sandbox = LinuxBubblewrapSandbox(tmp_path, bwrap_path=str(_fake_bwrap(tmp_path)))
+    argv, _ = sandbox.wrap(
+        [str(script), "--version"],
+        working_directory=tmp_path,
+        environment={},
+    )
+    command_index = argv.index("--") + 1
+    assert argv[command_index] == "/workspace/bin/inspect"
+    assert argv[command_index + 1] == "--version"
