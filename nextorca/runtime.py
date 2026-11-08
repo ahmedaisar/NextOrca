@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from nextorca.context import ContextBudget, ContextLimitError
 from nextorca.provider import ChatProvider, ProviderError
-from nextorca.session_store import SQLiteSessionStore, SessionStoreError
+from nextorca.session_store import SessionStoreError, SQLiteSessionStore
 from nextorca.tool_registry import (
     ToolExecutionError,
     ToolRegistry,
