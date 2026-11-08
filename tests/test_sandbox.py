@@ -188,3 +188,27 @@ def test_workspace_executable_is_rewritten_to_sandbox_path(tmp_path):
     command_index = argv.index("--") + 1
     assert argv[command_index] == "/workspace/bin/inspect"
     assert argv[command_index + 1] == "--version"
+
+
+
+@pytest.mark.parametrize("value", [".", "./", "a/./b", "a//b", "artifacts/"])
+def test_writable_path_rejects_ambiguous_components_and_workspace_root(tmp_path, value):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    nested = artifacts / "b"
+    nested.mkdir(exist_ok=True)
+    with pytest.raises(SandboxError):
+        LinuxBubblewrapSandbox(
+            tmp_path, writable_paths=(value,), bwrap_path=str(_fake_bwrap(tmp_path))
+        )
+
+
+def test_writable_path_rejects_internal_symlink(tmp_path):
+    target = tmp_path / "real"
+    target.mkdir()
+    link = tmp_path / "alias"
+    link.symlink_to(target, target_is_directory=True)
+    with pytest.raises(SandboxError, match="cannot traverse symlinks"):
+        LinuxBubblewrapSandbox(
+            tmp_path, writable_paths=("alias",), bwrap_path=str(_fake_bwrap(tmp_path))
+        )
