@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path, PureWindowsPath
-from typing import Any
 
-from nextorca.tool_registry import ToolRegistry, ToolSpec, ToolExecutionError
+from nextorca.tool_registry import ToolExecutionError, ToolRegistry, ToolSpec
 
 
 class WorkspaceError(ValueError):
