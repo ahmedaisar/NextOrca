@@ -61,7 +61,7 @@ def main() -> int:
     try:
         cases = json.loads(args.corpus.read_text(encoding="utf-8"))
         if not isinstance(cases, list):
-            raise ValueError("Routing corpus must be a JSON array.")
+            raise TypeError("Routing corpus must be a JSON array.")
         accuracy, mismatches, per_class = evaluate(cases)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.exit(2, f"routing evaluation: {exc}\n")
