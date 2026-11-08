@@ -137,6 +137,8 @@ class LinuxBubblewrapSandbox:
             [
                 "--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache",
                 "--ro-bind-try", "/etc/nsswitch.conf", "/etc/nsswitch.conf",
+                "--ro-bind-try", "/etc/passwd", "/etc/passwd",
+                "--ro-bind-try", "/etc/group", "/etc/group",
             ]
         )
 
@@ -169,6 +171,8 @@ class LinuxBubblewrapSandbox:
             "--cap-drop", "ALL",
             "--size", str(self.MAX_TMP_BYTES),
             "--tmpfs", "/tmp",
+            "--proc", "/proc",
+            "--dev", "/dev",
             "--dir", "/tmp/nextorca-home",
             "--dir", "/workspace",
         ]
