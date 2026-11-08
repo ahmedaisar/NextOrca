@@ -1,7 +1,7 @@
 # NextOrca Product Roadmap
 
 **Project:** NextOrca  
-**Baseline:** main @ 134e41012d733fc4e8c0691a5acf8deacf35562e  
+**Baseline:** main @ 8d1c38f160f45bc070fd15c0284ab2be0e3ae7a9  
 **Updated:** 2026-11-08  
 **Scope:** a personal terminal coding agent for the maintainer's own projects. Commercial-readiness requirements are intentionally out of scope.
 
