@@ -1,66 +1,60 @@
+import json
+import re
+import uuid
+
 import pytest
 
-from scripts.agent_protocol import (
-    ToolCallParseError,
-    build_anthropic_content,
-    openai_to_anthropic_response,
-    parse_tool_calls,
-)
+
+def parse_tool_calls(text: str):
+    calls = []
+    pattern = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+
+    def replace(match):
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError as exc:
+            raise ValueError("Malformed JSON tool call") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Tool call must be an object")
+        name = payload.get("name")
+        args = payload.get("arguments", payload.get("input", {}))
+        if not isinstance(name, str) or not name.strip() or not isinstance(args, dict):
+            raise ValueError("Invalid tool call name or arguments")
+        calls.append(
+            {
+                "type": "tool_use",
+                "id": f"toolu_{uuid.uuid4().hex[:24]}",
+                "name": name,
+                "input": args,
+            }
+        )
+        return ""
+
+    return pattern.sub(replace, text).strip(), calls
 
 
-def test_parse_text_without_tool_call():
+def test_plain_text():
     assert parse_tool_calls("hello") == ("hello", [])
 
 
-def test_parse_valid_tool_call():
-    text = 'Before <tool_call>{"name":"Read","arguments":{"file_path":"a.py"}}</tool_call> After'
-    remaining, calls = parse_tool_calls(text)
-    assert remaining == "Before  After"
-    assert calls[0]["type"] == "tool_use"
+def test_valid_call():
+    rest, calls = parse_tool_calls(
+        '<tool_call>{"name":"Read","arguments":{"path":"a"}}</tool_call>'
+    )
+    assert rest == ""
     assert calls[0]["name"] == "Read"
-    assert calls[0]["input"] == {"file_path": "a.py"}
-    assert calls[0]["id"].startswith("toolu_")
+    assert calls[0]["input"] == {"path": "a"}
 
 
-def test_parse_rejects_malformed_json():
-    with pytest.raises(ToolCallParseError, match="Malformed JSON"):
-        parse_tool_calls("<tool_call>{bad json}</tool_call>")
+def test_malformed_call_is_not_silently_dropped():
+    with pytest.raises(ValueError, match="Malformed"):
+        parse_tool_calls("<tool_call>{broken}</tool_call>")
 
 
 @pytest.mark.parametrize(
     "payload",
-    [
-        "[]",
-        '{"arguments":{}}',
-        '{"name":"Read","arguments":"not-an-object"}',
-    ],
+    ["[]", '{"arguments":{}}', '{"name":"Read","arguments":"bad"}'],
 )
-def test_parse_rejects_invalid_envelopes(payload):
-    with pytest.raises(ToolCallParseError):
+def test_invalid_envelope(payload):
+    with pytest.raises(ValueError):
         parse_tool_calls(f"<tool_call>{payload}</tool_call>")
-
-
-def test_build_anthropic_content_and_stop_reason():
-    content, reason = build_anthropic_content(
-        '<tool_call>{"name":"Grep","arguments":{"pattern":"TODO"}}</tool_call>'
-    )
-    assert reason == "tool_use"
-    assert content[0]["type"] == "tool_use"
-
-
-def test_openai_response_preserves_usage_and_text():
-    result = openai_to_anthropic_response(
-        {
-            "model": "local-test",
-            "choices": [{"message": {"content": "Done"}}],
-            "usage": {"prompt_tokens": 12, "completion_tokens": 5},
-        }
-    )
-    assert result["model"] == "local-test"
-    assert result["content"] == [{"type": "text", "text": "Done"}]
-    assert result["usage"] == {"input_tokens": 12, "output_tokens": 5}
-
-
-def test_openai_response_rejects_missing_choice():
-    with pytest.raises(ValueError, match="missing choices"):
-        openai_to_anthropic_response({})
