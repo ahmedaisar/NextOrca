@@ -51,6 +51,8 @@ def classify_task(messages: list[dict[str, Any]]) -> str:
         return "test"
     if any(term in user_text for term in ("debug", "bug", "traceback", "exception", "broken", "fix ")):
         return "debug"
+    if user_text.lstrip().startswith(("where is ", "where are ")):
+        return "explain"
     if any(term in user_text for term in ("implement", "refactor", "modify", "change ", "update ", "add ", "write ")):
         return "edit"
     if any(term in user_text for term in ("security", "audit", "review", "vulnerability", "code review")):
