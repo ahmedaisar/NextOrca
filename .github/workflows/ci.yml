@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, 'feat/**']
+    branches: [main, 'feat/**', 'docs/**']
 permissions:
   contents: read
 jobs:
@@ -30,14 +30,9 @@ jobs:
           bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / /usr/bin/true
       - run: uv sync --extra dev
       - run: uv run python -c "from importlib.metadata import version; assert version('nextorca') == '0.8.0'"
-      - run: uv run ruff check scripts/agent_protocol.py scripts/generate_claude_settings.py scripts/proxy_security.py nextorca tests evals
-      - name: Compile proxy modules
-        run: uv run python -m py_compile scripts/proxy.py scripts/proxy_security.py nextorca/*.py
-      - name: Check shell syntax
-        run: |
-          for script in scripts/setup.sh scripts/analyze.sh scripts/test_single.sh scripts/start_services.sh; do
-            bash -n "$script"
-          done
+      - run: uv run ruff check nextorca tests evals examples
+      - name: Compile Python packages
+        run: uv run python -m compileall -q nextorca examples evals
       - run: uv run nextorca --help
       - run: uv run python evals/evaluate_routing.py --fail-under 0.95
       - run: uv run pytest

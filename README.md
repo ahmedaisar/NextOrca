@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-Run `nextorca` inside a project to start an interactive coding session. Ask it to inspect and change code, run project commands, and iterate on test failures. Local/cloud orchestration stays behind the same terminal agent experience.
+Run `nextorca` inside a project to start an interactive coding session. Ask it to inspect and change code, run project commands, and iterate on test failures. Local/cloud orchestration stays behind the same terminal agent experience. The REPL, skills, plugins, goal workflow and provider routing are all part of one session.
 
 > **Project status:** personal project, under active development. Shell commands run with your user account permissions and are shown for approval before execution.
 
@@ -20,6 +20,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - [Plugins](#plugins)
 - [Context management](#context-management)
 - [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [Limitations and security](#limitations-and-security)
 - [License](#license)
@@ -62,6 +63,9 @@ uv sync --extra dev
 
 # Confirm the CLI is available
 uv run nextorca --help
+
+# Optional: install the CLI into your uv tool environment
+uv tool install .
 ```
 
 To install only runtime dependencies in an existing checkout, use `uv sync`.
@@ -72,7 +76,15 @@ To install only runtime dependencies in an existing checkout, use `uv sync`.
 
 For a local endpoint, start your preferred inference server and note its API base URL and model identifier. For example, a llama.cpp server commonly exposes an endpoint at `http://127.0.0.1:8080/v1`.
 
-### 2. Run NextOrca against a workspace
+### 2. Start the terminal coding agent
+
+```bash
+uv run nextorca --workspace ./path/to/your-repository
+```
+
+Type requests naturally. The agent can inspect files, edit with diff approval, run project commands after approval, and iterate on actual command output. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, `/context`, `/compact`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
+
+### 3. Run a one-shot prompt (optional)
 
 ```bash
 uv run nextorca \
@@ -82,15 +94,7 @@ uv run nextorca \
   "Explain the main modules and how they fit together."
 ```
 
-Interactive mode provides read, search, edit and shell tools. File edits show a diff and shell commands show the exact command before asking for approval.
-
-### 3. Start an interactive coding session
-
-```bash
-uv run nextorca --workspace ./path/to/your-repository
-```
-
-Type requests naturally. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
+One-shot mode is read-only by default. Use the interactive REPL for edits and shell execution.
 
 ### 4. Connect a hosted provider (optional)
 
@@ -121,14 +125,9 @@ uv run nextorca --workspace ./my-repo \
   "Map the package structure and identify the application entry points."
 ```
 
-### Enable reviewed file edits
+### Make a reviewed change
 
-```bash
-uv run nextorca --allow-edits --workspace ./my-repo \
-  "Update the version string in pyproject.toml."
-```
-
-NextOrca displays a proposed diff and requires interactive approval before applying a file mutation.
+Start `uv run nextorca` in the repository and ask for the change. Interactive mode exposes Write/Edit tools; every proposed diff must be approved before it is applied. Shell commands are also shown and approved individually.
 
 ### Use hybrid local/cloud routing
 
@@ -310,13 +309,13 @@ uv sync --extra dev
 ### Validate changes
 
 ```bash
-uv run ruff check scripts nextorca tests evals
-uv run python -m compileall -q nextorca scripts
+uv run ruff check nextorca tests evals examples
+uv run python -m compileall -q nextorca examples evals
 uv run pytest
 uv run python evals/evaluate_routing.py --fail-under 0.95
 ```
 
-The GitHub Actions workflow also validates the package, shell scripts, CLI, routing evaluation, and test suite. MCP sandbox tests require a Linux runner with Bubblewrap; Ubuntu hosts may additionally need a Bubblewrap-scoped AppArmor user-namespace profile.
+The GitHub Actions workflow also validates package metadata, linting, compilation, CLI startup, routing evaluation, and the test suite. MCP sandbox tests require a Linux runner with Bubblewrap; Ubuntu hosts may additionally need a Bubblewrap-scoped AppArmor user-namespace profile.
 
 ### Pull requests
 
@@ -331,13 +330,17 @@ Do not include API keys, credentials, private repository data, or generated sess
 ## Limitations and security
 
 - The agent runtime is experimental and is not a guarantee of autonomous coding correctness.
-- Built-in file tools are workspace-scoped. File edits are opt-in, diff-reviewed, and checkpointed. General-purpose shell execution is not enabled by the built-in runtime.
+- Built-in file tools are workspace-scoped. Interactive file edits are diff-reviewed and checkpointed. Shell and plugin commands run with your user permissions after approval; approval is not an OS sandbox.
 - Hybrid routing uses a deterministic classifier; it does not estimate model confidence or provider cost.
 - Local usage metrics remain in the SQLite database. Token counts depend on provider usage metadata; cost is not estimated.
 - MCP integrations are experimental and Linux-only. Bubblewrap is mandatory; there is no unsandboxed fallback. The sandbox is not a virtual machine and does not impose comprehensive CPU, memory, or process quotas.
 - MCP writable-path grants allow the configured server to write directly to those directories; those writes do not pass through NextOrca's file diff and undo workflow.
 - Only configure MCP commands you trust. Server descriptions, instructions, and tool outputs are untrusted input.
 - Cross-platform sandbox backends, broader interoperability testing, and stronger resource isolation remain future work.
+
+## Troubleshooting
+
+See the [troubleshooting guide](docs/troubleshooting.md) for provider connection errors, REPL behavior, skills/plugins discovery, MCP setup, and context/goal recovery.
 
 ## License
 
