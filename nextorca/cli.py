@@ -9,6 +9,7 @@ from pathlib import Path
 
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.permissions import InteractiveApprovalPolicy
+from nextorca.routing import HybridRouter
 from nextorca.runtime import AgentConfig, AgentRuntime, ReadOnlyPermissionPolicy
 from nextorca.session_store import SQLiteSessionStore
 from nextorca.workspace import Workspace, build_workspace_tools
@@ -27,19 +28,61 @@ def build_parser() -> argparse.ArgumentParser:
         help="Repository workspace (default: current directory).",
     )
     parser.add_argument(
+        "--route-mode",
+        choices=["single", "auto", "local", "cloud"],
+        default=os.environ.get("NEXTORCA_ROUTE_MODE", "single"),
+        help="Use one provider, automatic hybrid routing, or force local/cloud.",
+    )
+    parser.add_argument(
+        "--privacy-mode",
+        choices=["balanced", "local-only"],
+        default=os.environ.get("NEXTORCA_PRIVACY_MODE", "balanced"),
+        help="local-only prevents prompts and tool context from being sent to a cloud provider.",
+    )
+    parser.add_argument(
         "--base-url",
         default=os.environ.get("NEXTORCA_BASE_URL", "http://127.0.0.1:8080/v1"),
-        help="OpenAI-compatible API base URL.",
+        help="Single-provider OpenAI-compatible API base URL.",
     )
     parser.add_argument(
         "--model",
         default=os.environ.get("NEXTORCA_MODEL", "local-model"),
-        help="Model identifier served by the configured provider.",
+        help="Model for single-provider mode.",
     )
     parser.add_argument(
         "--api-key",
         default=os.environ.get("NEXTORCA_API_KEY"),
-        help="Provider API key (prefer NEXTORCA_API_KEY environment variable).",
+        help="API key for single-provider mode (prefer environment variable).",
+    )
+    parser.add_argument(
+        "--local-base-url",
+        default=os.environ.get("NEXTORCA_LOCAL_BASE_URL", "http://127.0.0.1:8080/v1"),
+        help="Local OpenAI-compatible endpoint for hybrid mode.",
+    )
+    parser.add_argument(
+        "--local-model",
+        default=os.environ.get("NEXTORCA_LOCAL_MODEL", "local-model"),
+        help="Local model identifier for hybrid mode.",
+    )
+    parser.add_argument(
+        "--local-api-key",
+        default=os.environ.get("NEXTORCA_LOCAL_API_KEY"),
+        help="Optional API key for the local model endpoint.",
+    )
+    parser.add_argument(
+        "--cloud-base-url",
+        default=os.environ.get("NEXTORCA_CLOUD_BASE_URL"),
+        help="Cloud OpenAI-compatible endpoint, for example https://openrouter.ai/api/v1.",
+    )
+    parser.add_argument(
+        "--cloud-model",
+        default=os.environ.get("NEXTORCA_CLOUD_MODEL", "qwen/qwen3-coder-next"),
+        help="Cloud model identifier for hybrid mode.",
+    )
+    parser.add_argument(
+        "--cloud-api-key",
+        default=os.environ.get("NEXTORCA_CLOUD_API_KEY", os.environ.get("OPENROUTER_API_KEY")),
+        help="Cloud API key (prefer NEXTORCA_CLOUD_API_KEY or OPENROUTER_API_KEY).",
     )
     parser.add_argument(
         "--session-db",
@@ -77,7 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Print structured agent events to stderr.",
+        help="Print structured agent and routing events to stderr.",
     )
     return parser
 
@@ -98,7 +141,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.prompt:
             parser.error("provide a prompt, --undo-checkpoint, or --list-checkpoints")
 
-        provider = OpenAICompatibleProvider(args.base_url, api_key=args.api_key)
+        route_logger = (
+            lambda decision: print(
+                json.dumps({"type": "route_decision", **decision.as_dict()}),
+                file=sys.stderr,
+            )
+        ) if args.verbose else None
+
+        if args.route_mode == "single":
+            provider = OpenAICompatibleProvider(args.base_url, api_key=args.api_key)
+            runtime_model = args.model
+        else:
+            local_provider = (
+                OpenAICompatibleProvider(args.local_base_url, api_key=args.local_api_key)
+                if args.route_mode in {"auto", "local"}
+                else None
+            )
+            cloud_provider = (
+                OpenAICompatibleProvider(args.cloud_base_url, api_key=args.cloud_api_key)
+                if args.cloud_base_url and args.route_mode in {"auto", "cloud"}
+                else None
+            )
+            provider = HybridRouter(
+                local_provider=local_provider,
+                local_model=args.local_model if local_provider is not None else None,
+                cloud_provider=cloud_provider,
+                cloud_model=args.cloud_model if cloud_provider is not None else None,
+                route_mode=args.route_mode if args.route_mode != "single" else "auto",
+                privacy_mode=args.privacy_mode,
+                on_route=route_logger,
+            )
+            runtime_model = "hybrid"
+
         edits_enabled = bool(args.allow_edits)
         tools = build_workspace_tools(
             workspace,
@@ -120,7 +194,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         runtime = AgentRuntime(
             provider=provider,
-            model=args.model,
+            model=runtime_model,
             tools=tools,
             permission_policy=policy,
             config=AgentConfig(max_turns=args.max_turns, system_prompt=system_prompt),
