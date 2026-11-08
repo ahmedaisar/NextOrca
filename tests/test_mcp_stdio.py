@@ -319,13 +319,13 @@ def test_mcp_manifest_rejects_oversized_configuration(tmp_path):
 
 def test_modern_discovery_requires_cache_and_capability_fields(tmp_path):
     script = MODERN_SERVER.replace(
-        '            "cacheScope": "private",\n            "ttlMs": 0',
+        '                "cacheScope": "private",\n                "ttlMs": 0',
         '',
     )
     client = _client(script, tmp_path, "bad-discovery")
     with pytest.raises(MCPServerError, match="cacheScope"):
         client.connect()
-    client.close()
+    assert client.process is None
 
 
 def test_mcp_manifest_network_and_writable_grants_are_typed(tmp_path):
