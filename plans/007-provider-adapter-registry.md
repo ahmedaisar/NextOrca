@@ -10,7 +10,7 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none
+- **Depends on**: plans/006-session-discovery-and-resume.md and plans/005-full-screen-terminal-ui.md
 - **Category**: direction
 - **Planned at**: commit `f7ba50e`, 2026-11-12
 
@@ -98,13 +98,13 @@ Run the same local/cloud and local-only behavior through the new adapter. Verify
 
 ## Done criteria
 
-- [ ] CLI no longer contains provider-construction duplication; current OpenAI-compatible setup remains default-compatible.
+- [x] CLI no longer contains provider-construction duplication; current OpenAI-compatible setup remains default-compatible.
 - [ ] One additional native adapter is implemented only after its target is explicitly selected (not yet complete; implementation is blocked pending the maintainer's choice).
 - [ ] Streaming/tool-call behavior is represented in adapter contract tests.
-- [ ] Local-only routing cannot reach cloud through the new adapter.
-- [ ] No provider-specific logic is placed in `AgentRuntime` or task classifier.
+- [x] Local-only routing cannot reach cloud through the new registry/factory.
+- [x] No provider-specific logic is placed in `AgentRuntime` or task classifier.
 - [ ] Full pytest, Ruff and compileall pass.
-- [ ] Documentation lists only tested, supported capabilities.
+- [x] Documentation lists only tested, supported capabilities.
 
 ## STOP conditions
 
