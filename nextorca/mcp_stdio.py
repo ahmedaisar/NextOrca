@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 # ruff: isort: off
 import os
@@ -134,6 +135,8 @@ def _validate_remote_value(
     }.get(expected, False)
     if not valid:
         raise ToolExecutionError(f"MCP argument {path} must be {expected}.")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ToolExecutionError(f"MCP argument {path} must be a finite number.")
     if isinstance(value, str) and (
         len(value) < schema.get("minLength", 0)
         or len(value) > schema.get("maxLength", 100_000)
