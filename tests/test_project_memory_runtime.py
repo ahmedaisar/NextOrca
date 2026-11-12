@@ -90,5 +90,5 @@ def test_disabled_or_unrelated_project_memory_is_not_added_to_provider_context(t
     assert any("Selected project memory" in message.get("content", "") for message in provider.requests[0])
 
     store.set_project_memory_enabled(workspace, False)
-    runtime.run("How is the unrelated cache layer configured?")
+    runtime.run("Explain the terminal theme preference.")
     assert not any("Selected project memory" in message.get("content", "") for message in provider.requests[1])
