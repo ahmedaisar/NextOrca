@@ -159,8 +159,10 @@ def test_session_previews_and_search_redact_common_secrets_and_terminal_controls
     store = SQLiteSessionStore(tmp_path / "sessions.db")
     workspace = str(tmp_path)
     session_id = store.create_session(workspace=workspace, model="mock")
-    prompt = "Review api_key=very-secret-value and authorization: Bearer bearer-secret-value " \
+    prompt = (
+        "Review api_key=very-secret-value and authorization: Bearer bearer-secret-value "
         "plus sk-12345678901234567890\x1b[31m now"
+    )
     store.append_message(session_id, {"role": "user", "content": prompt})
 
     listed = store.list_sessions(workspace)
