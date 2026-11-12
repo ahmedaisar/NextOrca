@@ -70,10 +70,10 @@ def test_read_and_grep_preserve_utf8_replacement_behavior(tmp_path):
 
 def test_mutation_read_preserves_universal_newline_normalization(tmp_path):
     target = tmp_path / "newlines.txt"
-    target.write_bytes(b"first\\r\\nsecond\\rthird")
+    target.write_bytes(b"first\r\nsecond\rthird")
     workspace = Workspace(tmp_path, max_write_bytes=64)
 
-    assert workspace._current_text(target) == (True, "first\\nsecond\\nthird")
+    assert workspace._current_text(target) == (True, "first\nsecond\nthird")
 
 
 def test_mutation_read_preserves_strict_utf8_validation(tmp_path):
