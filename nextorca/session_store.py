@@ -123,6 +123,25 @@ class SQLiteSessionStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace
                     ON checkpoints(workspace, created_at);
+                CREATE TABLE IF NOT EXISTS project_memories (
+                    memory_id TEXT PRIMARY KEY,
+                    workspace TEXT NOT NULL,
+                    memory_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source_session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+                    source_message_sequence INTEGER NOT NULL,
+                    verification_status TEXT NOT NULL DEFAULT 'operator_confirmed',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(workspace, source_session_id, source_message_sequence, memory_type, content)
+                );
+                CREATE INDEX IF NOT EXISTS idx_project_memories_workspace
+                    ON project_memories(workspace, created_at DESC);
+                CREATE TABLE IF NOT EXISTS project_memory_settings (
+                    workspace TEXT PRIMARY KEY,
+                    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             connection.commit()
