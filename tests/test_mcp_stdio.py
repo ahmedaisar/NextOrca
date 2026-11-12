@@ -132,9 +132,9 @@ for line in sys.stdin:
 '''
 
 
-pytestmark = pytest.mark.skipif(
+REQUIRES_BUBBLEWRAP = pytest.mark.skipif(
     not sys.platform.startswith("linux") or shutil.which("bwrap") is None,
-    reason="MCP stdio tests require the Linux Bubblewrap sandbox.",
+    reason="MCP stdio integration tests require the Linux Bubblewrap sandbox.",
 )
 
 
@@ -150,6 +150,7 @@ def _client(script: str, tmp_path: Path, name: str = "test") -> MCPStdioClient:
     return MCPStdioClient(config, workspace_root=tmp_path)
 
 
+@REQUIRES_BUBBLEWRAP
 def test_modern_mcp_discovery_lists_and_calls_tools(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "do-not-inherit-to-mcp")
     registry = ToolRegistry()
@@ -168,6 +169,7 @@ def test_modern_mcp_discovery_lists_and_calls_tools(tmp_path, monkeypatch):
         assert registry.execute_prepared(prepared) == "hello"
 
 
+@REQUIRES_BUBBLEWRAP
 def test_legacy_mcp_server_uses_initialize_fallback(tmp_path):
     registry = ToolRegistry()
     with _client(LEGACY_SERVER, tmp_path, "legacy") as client:
@@ -208,6 +210,7 @@ def test_mcp_config_limits_server_count(tmp_path):
         load_mcp_config(config_path)
 
 
+@REQUIRES_BUBBLEWRAP
 def test_mcp_tool_schema_rejects_non_object_arguments(tmp_path):
     script = MODERN_SERVER.replace(
         '"type": "object",\n                        "properties": {"text": {"type": "string", "minLength": 1}},',
@@ -221,6 +224,7 @@ def test_mcp_tool_schema_rejects_non_object_arguments(tmp_path):
         client.register_tools(ToolRegistry())
 
 
+@REQUIRES_BUBBLEWRAP
 def test_mcp_server_process_is_closed_on_context_exit(tmp_path):
     client = _client(MODERN_SERVER, tmp_path, "close")
     with client:
@@ -230,6 +234,7 @@ def test_mcp_server_process_is_closed_on_context_exit(tmp_path):
     assert process.poll() is not None
 
 
+@REQUIRES_BUBBLEWRAP
 def test_env_passthrough_is_explicit(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_EXPLICIT_VALUE", "visible")
     config = MCPServerConfig(
@@ -247,6 +252,7 @@ def test_env_passthrough_is_explicit(tmp_path, monkeypatch):
 
 
 
+@REQUIRES_BUBBLEWRAP
 def test_modern_input_required_response_is_rejected(tmp_path):
     script = MODERN_SERVER.replace(
         '"resultType": "complete",\n                "tools":',
@@ -257,6 +263,7 @@ def test_modern_input_required_response_is_rejected(tmp_path):
         client.list_tools()
 
 
+@REQUIRES_BUBBLEWRAP
 def test_remote_tool_schema_validates_nested_arguments(tmp_path):
     script = MODERN_SERVER.replace(
         '"properties": {"text": {"type": "string", "minLength": 1}},\n'
@@ -273,6 +280,7 @@ def test_remote_tool_schema_validates_nested_arguments(tmp_path):
             registry.prepare(tool, {"nested": {"count": 0}})
 
 
+@REQUIRES_BUBBLEWRAP
 def test_mcp_request_timeout_terminates_server_process_group(tmp_path):
     script = r'''
 import json, sys, time
@@ -317,6 +325,7 @@ def test_mcp_manifest_rejects_oversized_configuration(tmp_path):
         load_mcp_config(config_path)
 
 
+@REQUIRES_BUBBLEWRAP
 def test_modern_discovery_requires_cache_and_capability_fields(tmp_path):
     script = MODERN_SERVER.replace(
         '                "cacheScope": "private",\n                "ttlMs": 0,\n',
