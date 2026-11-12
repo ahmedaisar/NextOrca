@@ -8,10 +8,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from nextorca.mcp_stdio import MCPStdioClient, load_mcp_config
-from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.permissions import InteractiveApprovalPolicy
 from nextorca.plugins import build_plugin_tools, discover_plugins, format_plugin_catalog
-from nextorca.routing import HybridRouter
+from nextorca.provider_registry import (
+    DEFAULT_PROVIDER_ADAPTER,
+    ProviderEndpoint,
+    RuntimeProviderConfig,
+    build_runtime_provider,
+)
 from nextorca.runtime import AgentConfig, AgentRuntime, ReadOnlyPermissionPolicy
 from nextorca.session_store import SQLiteSessionStore
 from nextorca.shell import build_shell_tool
@@ -69,6 +73,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--api-key",
         default=os.environ.get("NEXTORCA_API_KEY"),
         help="API key for single-provider mode (prefer environment variable).",
+    )
+    parser.add_argument(
+        "--provider-adapter",
+        default=os.environ.get("NEXTORCA_PROVIDER_ADAPTER", DEFAULT_PROVIDER_ADAPTER),
+        help="Single-provider transport adapter (default: openai-compatible).",
+    )
+    parser.add_argument(
+        "--local-provider-adapter",
+        default=os.environ.get("NEXTORCA_LOCAL_PROVIDER_ADAPTER", DEFAULT_PROVIDER_ADAPTER),
+        help="Local transport adapter for hybrid routing.",
+    )
+    parser.add_argument(
+        "--cloud-provider-adapter",
+        default=os.environ.get("NEXTORCA_CLOUD_PROVIDER_ADAPTER", DEFAULT_PROVIDER_ADAPTER),
+        help="Cloud transport adapter for hybrid routing.",
     )
     parser.add_argument(
         "--local-base-url",
@@ -294,35 +313,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         route_logger = log_route if (args.verbose or interactive) and not use_tui else None
 
-        if args.route_mode == "single":
-            if args.privacy_mode == "local-only":
-                raise ValueError(
-                    "local-only privacy mode requires --route-mode local or auto "
-                    "and a local model endpoint."
-                )
-            provider = OpenAICompatibleProvider(args.base_url, api_key=args.api_key)
-            runtime_model = args.model
-        else:
-            local_provider = (
-                OpenAICompatibleProvider(args.local_base_url, api_key=args.local_api_key)
-                if args.route_mode in {"auto", "local"}
-                else None
-            )
-            cloud_provider = (
-                OpenAICompatibleProvider(args.cloud_base_url, api_key=args.cloud_api_key)
-                if args.cloud_base_url and args.route_mode in {"auto", "cloud"}
-                else None
-            )
-            provider = HybridRouter(
-                local_provider=local_provider,
-                local_model=args.local_model if local_provider is not None else None,
-                cloud_provider=cloud_provider,
-                cloud_model=args.cloud_model if cloud_provider is not None else None,
-                route_mode=args.route_mode if args.route_mode != "single" else "auto",
+        provider, runtime_model = build_runtime_provider(
+            RuntimeProviderConfig(
+                route_mode=args.route_mode,
                 privacy_mode=args.privacy_mode,
-                on_route=route_logger,
-            )
-            runtime_model = "hybrid"
+                single=ProviderEndpoint(
+                    adapter=args.provider_adapter,
+                    base_url=args.base_url,
+                    model=args.model,
+                    api_key=args.api_key,
+                ),
+                local=ProviderEndpoint(
+                    adapter=args.local_provider_adapter,
+                    base_url=args.local_base_url,
+                    model=args.local_model,
+                    api_key=args.local_api_key,
+                ),
+                cloud=ProviderEndpoint(
+                    adapter=args.cloud_provider_adapter,
+                    base_url=args.cloud_base_url,
+                    model=args.cloud_model,
+                    api_key=args.cloud_api_key,
+                ),
+            ),
+            on_route=route_logger,
+        )
 
         edits_enabled = bool(args.allow_edits or interactive)
         mcp_enabled = bool(args.allow_mcp_tools)
