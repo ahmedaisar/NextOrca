@@ -6,6 +6,8 @@
 
 ## Status
 
+- **Execution state**: BLOCKED after registry/factory completion; no native adapter target selected
+- **Implementation PR**: [#28](https://github.com/ahmedaisar/NextOrca/pull/28)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
