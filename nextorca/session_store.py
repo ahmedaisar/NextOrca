@@ -580,7 +580,7 @@ class SQLiteSessionStore:
             if match_index > 81:
                 excerpt = "..." + excerpt
             if len(excerpt) >= 200:
-                excerpt += "..."
+                excerpt = excerpt[:197] + "..."
             results.append(
                 {
                     "session_id": row["session_id"],
