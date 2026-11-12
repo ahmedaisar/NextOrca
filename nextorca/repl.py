@@ -97,7 +97,11 @@ def run_repl(runtime: AgentRuntime) -> None:
                 print("Persistent session storage is not configured.")
                 continue
             try:
-                if argument.isdecimal():
+                selected = runtime.session_store.get_session_overview(
+                    argument,
+                    workspace=runtime.workspace_root,
+                )
+                if selected is None and argument.isdecimal():
                     sessions = runtime.session_store.list_sessions(
                         runtime.workspace_root,
                         limit=20,
@@ -107,11 +111,6 @@ def run_repl(runtime: AgentRuntime) -> None:
                         print("Session index is not in the current /sessions list.")
                         continue
                     selected = sessions[position - 1]
-                else:
-                    selected = runtime.session_store.get_session_overview(
-                        argument,
-                        workspace=runtime.workspace_root,
-                    )
                 if selected is None:
                     print("Session not found in this workspace.")
                     continue
