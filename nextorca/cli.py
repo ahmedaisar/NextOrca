@@ -330,7 +330,7 @@ def _run_memory_command(argv: Sequence[str]) -> int:
             if not store.forget_project_memory(args.memory_id, workspace=workspace_key):
                 print("Memory not found in this workspace.", file=sys.stderr)
                 return 1
-            print(f"Forgot project memory {args.memory_id}.")
+            print(f"Forgot project memory {args.memory_id}.", file=sys.stderr)
             return 0
         if args.action == "add":
             result = store.add_project_memory(
