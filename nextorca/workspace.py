@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import fnmatch
+import io
 import os
 import stat
 import tempfile
@@ -70,10 +71,23 @@ class Workspace:
 
     @staticmethod
     def _read_bounded_bytes(path: Path, limit: int) -> bytes | None:
-        """Read at most one byte beyond the configured limit, without buffered read-ahead."""
+        """Read no more than the configured limit plus one byte."""
+        if limit < 0:
+            return None
+        data = bytearray()
         with path.open("rb", buffering=0) as handle:
-            data = handle.read(limit + 1)
-        return None if len(data) > limit else data
+            while len(data) <= limit:
+                chunk = handle.read(limit + 1 - len(data))
+                if not chunk:
+                    break
+                data.extend(chunk)
+        return None if len(data) > limit else bytes(data)
+
+    @staticmethod
+    def _decode_text(data: bytes, *, errors: str = "strict") -> str:
+        """Decode UTF-8 with the universal-newline behavior of Path.read_text."""
+        with io.TextIOWrapper(io.BytesIO(data), encoding="utf-8", errors=errors) as handle:
+            return handle.read()
 
     def read(self, file_path: str, offset: int = 0, limit: int | None = None) -> str:
         path = self.resolve(file_path, allow_root=False)
@@ -83,7 +97,7 @@ class Workspace:
             data = self._read_bounded_bytes(path, self.max_read_bytes)
             if data is None:
                 raise ToolExecutionError("File exceeds the configured read-size limit.")
-            lines = data.decode("utf-8", errors="replace").splitlines()
+            lines = self._decode_text(data, errors="replace").splitlines()
         except OSError as exc:
             raise ToolExecutionError("File could not be read.") from exc
         if offset < 0 or (limit is not None and limit < 0):
@@ -154,7 +168,7 @@ class Workspace:
                 data = self._read_bounded_bytes(resolved, self.max_read_bytes)
                 if data is None:
                     continue
-                lines = data.decode("utf-8", errors="replace").splitlines()
+                lines = self._decode_text(data, errors="replace").splitlines()
             except OSError:
                 continue
             for line_number, line in enumerate(lines, start=1):
@@ -196,7 +210,7 @@ class Workspace:
             data = self._read_bounded_bytes(path, self.max_write_bytes)
             if data is None:
                 raise ToolExecutionError("Mutation target exceeds the configured size limit.")
-            return True, data.decode("utf-8")
+            return True, self._decode_text(data)
         except UnicodeDecodeError as exc:
             raise ToolExecutionError("Only UTF-8 text files can be edited.") from exc
         except OSError as exc:
