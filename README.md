@@ -19,6 +19,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - [Skills](#skills)
 - [Plugins](#plugins)
 - [Context management](#context-management)
+- [Project memory](docs/project-memory.md)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -39,6 +40,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Approval-gated edits:** interactive sessions expose file creation and exact-text edits with a diff approval before each change; one-shot mode stays read-only by default.
 - **Undo checkpoints:** inspect approved changes and undo a checkpoint when the target file has not changed since.
 - **Persistent sessions:** SQLite-backed session history and resumable session IDs.
+- **Project memory:** explicitly saved, workspace-scoped facts and decisions with source provenance, bounded retrieval, and inspect/forget/disable controls.
 - **Local observability:** inspect provider, latency, token-usage, and routing metrics without sending telemetry to an analytics service.
 - **MCP stdio integrations (experimental):** explicitly configured servers run in a Linux Bubblewrap sandbox; each external tool call requires interactive approval.
 
