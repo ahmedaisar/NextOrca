@@ -19,6 +19,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - [Skills](#skills)
 - [Plugins](#plugins)
 - [Context management](#context-management)
+- [Project memory](docs/project-memory.md)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -39,6 +40,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Approval-gated edits:** interactive sessions expose file creation and exact-text edits with a diff approval before each change; one-shot mode stays read-only by default.
 - **Undo checkpoints:** inspect approved changes and undo a checkpoint when the target file has not changed since.
 - **Persistent sessions:** SQLite-backed session history and resumable session IDs.
+- **Project memory:** explicitly saved, workspace-scoped facts and decisions with source provenance, bounded retrieval, and inspect/forget/disable controls.
 - **Local observability:** inspect provider, latency, token-usage, and routing metrics without sending telemetry to an analytics service.
 - **MCP stdio integrations (experimental):** explicitly configured servers run in a Linux Bubblewrap sandbox; each external tool call requires interactive approval.
 
@@ -279,15 +281,15 @@ The single-provider mode accepts these options:
 | `--model` | `NEXTORCA_MODEL` | Model identifier |
 | `--api-key` | `NEXTORCA_API_KEY` | Provider API key |
 | `--provider-adapter` | `NEXTORCA_PROVIDER_ADAPTER` | Single-provider transport (currently `openai-compatible`) |
-| `--local-provider-adapter` | `NEXTORCA_LOCAL_PROVIDER_ADAPTER` | Local transport adapter |
-| `--cloud-provider-adapter` | `NEXTORCA_CLOUD_PROVIDER_ADAPTER` | Cloud transport adapter |
+| `--local-provider-adapter` | `NEXTORCA_LOCAL_PROVIDER_ADAPTER` | Local transport adapter in hybrid mode |
+| `--cloud-provider-adapter` | `NEXTORCA_CLOUD_PROVIDER_ADAPTER` | Cloud transport adapter in hybrid mode |
 | `--workspace` | — | Workspace root (defaults to current directory) |
 | `--max-turns` | — | Maximum agent turns |
 | `--session-db` | `NEXTORCA_SESSION_DB` | SQLite session database path |
 | `--session-id` | `NEXTORCA_SESSION_ID` | Resume an existing session |
 | `--verbose` | — | Emit structured runtime and routing events to stderr |
 
-Hybrid mode additionally supports `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_LOCAL_API_KEY`, `NEXTORCA_LOCAL_PROVIDER_ADAPTER`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_CLOUD_API_KEY`, and `NEXTORCA_CLOUD_PROVIDER_ADAPTER`. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The provider registry currently ships only the `openai-compatible` adapter; unknown adapters fail explicitly. See the [provider adapter contract](docs/provider-adapter-contract.md).
+Hybrid mode additionally supports `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_LOCAL_API_KEY`, `NEXTORCA_LOCAL_PROVIDER_ADAPTER`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_CLOUD_API_KEY`, and `NEXTORCA_CLOUD_PROVIDER_ADAPTER`. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The provider registry currently ships only the `openai-compatible` adapter; unknown adapters fail explicitly. See the [provider adapter contract](docs/provider-adapter-contract.md) before proposing another transport.
 
 Useful permission and maintenance options:
 
