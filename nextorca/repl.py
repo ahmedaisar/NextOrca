@@ -20,6 +20,7 @@ HELP = """NextOrca interactive commands:
   /compact    Summarize older conversation history for future turns
   /mcp        List configured MCP tools
   /plugins    List loaded plugin tools
+  /memory     list|status|on|off|search|preview|show|add|forget
   /goal       /goal <objective> [--verify <command>]
               /goal status | resume | clear
   /exit       Leave NextOrca
@@ -90,7 +91,7 @@ def _memory_command(runtime: AgentRuntime, argument: str) -> str:
         records = store.list_project_memories(workspace, limit=100)
         if not records:
             return "No project memory records."
-        return "\\n".join(
+        return "\n".join(
             f"{item['memory_id']} · {item['memory_type']} · "
             f"{item['source_session_id']}#{item['source_message_sequence']} · {item['content']}"
             for item in records
@@ -102,7 +103,7 @@ def _memory_command(runtime: AgentRuntime, argument: str) -> str:
         selected = store.search_project_memories(workspace, query, limit=4)
         if not selected:
             return "No matching project memories selected."
-        return "\\n".join(
+        return "\n".join(
             f"{item['memory_id']} · {item['memory_type']} · "
             f"{item['source_session_id']}#{item['source_message_sequence']} · "
             f"matched {', '.join(item['match_terms'])}: {item['content']}"
