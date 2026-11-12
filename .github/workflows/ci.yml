@@ -1,17 +1,56 @@
 name: CI
+
 on:
   pull_request:
-  push:
-    branches: [main, 'feat/**', 'docs/**']
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  quick:
+    name: Quick checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.12
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install development dependencies
+        run: uv sync --extra dev
+      - name: Validate package metadata
+        run: uv run python -c "from importlib.metadata import version; assert version('nextorca') == '0.8.0'"
+      - name: Lint
+        run: uv run ruff check nextorca tests evals examples
+      - name: Compile Python packages
+        run: uv run python -m compileall -q nextorca examples evals
+      - name: CLI smoke test
+        run: uv run nextorca --help
+      - name: Unit and integration tests (sandbox-dependent tests skip when unavailable)
+        run: uv run pytest
+
+  comprehensive:
+    name: Comprehensive validation
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
       - name: Install Linux sandbox runtime
         run: |
           sudo apt-get update
@@ -28,11 +67,17 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/bwrap
           bwrap --version
           bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / /usr/bin/true
-      - run: uv sync --extra dev
-      - run: uv run python -c "from importlib.metadata import version; assert version('nextorca') == '0.8.0'"
-      - run: uv run ruff check nextorca tests evals examples
+      - name: Install development dependencies
+        run: uv sync --extra dev
+      - name: Validate package metadata
+        run: uv run python -c "from importlib.metadata import version; assert version('nextorca') == '0.8.0'"
+      - name: Lint
+        run: uv run ruff check nextorca tests evals examples
       - name: Compile Python packages
         run: uv run python -m compileall -q nextorca examples evals
-      - run: uv run nextorca --help
-      - run: uv run python evals/evaluate_routing.py --fail-under 0.95
-      - run: uv run pytest
+      - name: CLI smoke test
+        run: uv run nextorca --help
+      - name: Routing evaluation
+        run: uv run python evals/evaluate_routing.py --fail-under 0.95
+      - name: Full test suite
+        run: uv run pytest
