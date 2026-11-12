@@ -177,7 +177,7 @@ def test_project_memory_rejects_terminal_control_characters(tmp_path):
         store.add_project_memory(
             workspace=workspace,
             memory_type="fact",
-            content="Terminal status text\\x1b[31m must not inject an ANSI sequence.",
+            content="Terminal status text\x1b[31m must not inject an ANSI sequence.",
             source_session_id=session_id,
             source_message_sequence=sequence,
         )
