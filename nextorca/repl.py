@@ -143,7 +143,7 @@ def _memory_command(runtime: AgentRuntime, argument: str) -> str:
             source_message_sequence=sequence,
             content=" ".join(parts[4:]),
         )
-        return f"Saved operator-confirmed project memory {result['memory_id']}."
+        return f"Saved operator-confirmed project memory {result['memory_id']}"
     raise ValueError("Unknown memory command. Use /memory list|status|on|off|search|show|add|forget.")
 
 
