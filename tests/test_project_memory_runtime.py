@@ -20,17 +20,17 @@ class MemoryProvider:
 def test_runtime_injects_only_matching_project_memory_and_does_not_persist_it(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.db")
     workspace = str(tmp_path)
-    session_id = store.create_session(workspace=workspace, model="mock")
-    store.append_message(session_id, {"role": "system", "content": "System instructions."})
+    source_session_id = store.create_session(workspace=workspace, model="mock")
+    store.append_message(source_session_id, {"role": "system", "content": "System instructions."})
     source_sequence = store.append_message(
-        session_id,
+        source_session_id,
         {"role": "user", "content": "We decided how Redis cache keys should work."},
     )
     record = store.add_project_memory(
         workspace=workspace,
         memory_type="decision",
         content="Redis cache keys include the schema version and expire after five minutes.",
-        source_session_id=session_id,
+        source_session_id=source_session_id,
         source_message_sequence=source_sequence,
     )
     provider = MemoryProvider()
@@ -40,7 +40,6 @@ def test_runtime_injects_only_matching_project_memory_and_does_not_persist_it(tm
         tools=ToolRegistry(),
         session_store=store,
         workspace_root=workspace,
-        session_id=session_id,
     )
     events = []
     runtime.on_event = events.append
@@ -55,11 +54,12 @@ def test_runtime_injects_only_matching_project_memory_and_does_not_persist_it(tm
     assert len(memory_messages) == 1
     assert record["memory_id"] in memory_messages[0]["content"]
     assert "schema version" in memory_messages[0]["content"]
-    assert f"{session_id}#{source_sequence}" in memory_messages[0]["content"]
+    assert f"{source_session_id}#{source_sequence}" in memory_messages[0]["content"]
+    assert runtime.session_id != source_session_id
     assert any(event.type == "project_memory_selected" for event in events)
     assert all(
         "Selected project memory" not in message.get("content", "")
-        for message in store.load_messages(session_id)
+        for message in store.load_messages(runtime.session_id)
     )
 
 
@@ -124,3 +124,54 @@ def test_optional_memory_is_dropped_when_it_would_exceed_context_budget(tmp_path
     ]
 
     assert runtime._with_project_memory(messages, "How do Redis keys work?") == messages
+
+
+
+def test_local_only_router_uses_local_provider_with_project_memory(tmp_path):
+    from nextorca.routing import HybridRouter
+
+    class Provider:
+        def __init__(self, name):
+            self.name = name
+            self.messages = []
+
+        def complete(self, *, model, messages, tools):
+            self.messages.append(messages)
+            return AssistantTurn(content=self.name)
+
+    store = SQLiteSessionStore(tmp_path / "sessions.db")
+    workspace = str(tmp_path)
+    source_session = store.create_session(workspace=workspace, model="mock")
+    store.append_message(source_session, {"role": "system", "content": "System"})
+    sequence = store.append_message(source_session, {"role": "user", "content": "Cache behavior"})
+    store.add_project_memory(
+        workspace=workspace,
+        memory_type="decision",
+        content="Redis cache TTL is five minutes.",
+        source_session_id=source_session,
+        source_message_sequence=sequence,
+    )
+    local = Provider("local")
+    cloud = Provider("cloud")
+    router = HybridRouter(
+        local_provider=local,
+        local_model="local",
+        cloud_provider=cloud,
+        cloud_model="cloud",
+        privacy_mode="local-only",
+    )
+    runtime = AgentRuntime(
+        provider=router,
+        model="hybrid",
+        tools=ToolRegistry(),
+        session_store=store,
+        workspace_root=workspace,
+    )
+
+    assert runtime.run("How should Redis cache TTL be configured?") == "local"
+    assert len(local.messages) == 1
+    assert any(
+        "Selected project memory" in message.get("content", "")
+        for message in local.messages[0]
+    )
+    assert cloud.messages == []
