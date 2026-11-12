@@ -2,10 +2,41 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import uuid
 from pathlib import Path
 from typing import Any
+
+
+_SESSION_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)\\b(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|"
+    r"token|secret|password|passwd|authorization|private[_-]?key)"
+    r"(\\s*[:=]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)"
+)
+_SESSION_BEARER_CREDENTIAL = re.compile(r"(?i)\\b(Bearer|Basic)\\s+[A-Za-z0-9._~+/=-]+")
+_SESSION_KNOWN_TOKEN = re.compile(
+    r"(?i)\\b(?:sk-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})"
+)
+_SESSION_PRIVATE_KEY = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\\s\\S]*?"
+    r"-----END [A-Z0-9 ]*PRIVATE KEY-----"
+)
+
+
+def _redact_session_text(value: str) -> str:
+    """Mask common credential forms before session text is shown in terminal previews."""
+    value = _SESSION_PRIVATE_KEY.sub("[REDACTED PRIVATE KEY]", value)
+    value = _SESSION_SECRET_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]",
+        value,
+    )
+    value = _SESSION_BEARER_CREDENTIAL.sub(
+        lambda match: f"{match.group(1)} [REDACTED]",
+        value,
+    )
+    return _SESSION_KNOWN_TOKEN.sub("[REDACTED TOKEN]", value)
 
 
 class SessionStoreError(RuntimeError):
@@ -483,7 +514,7 @@ class SQLiteSessionStore:
                         "updated_at": row["updated_at"],
                         "message_count": int(row["message_count"]),
                         "last_user_prompt": (
-                            latest_prompt[:preview_chars] if latest_prompt is not None else None
+                            _redact_session_text(latest_prompt[:preview_chars]) if latest_prompt is not None else None
                         ),
                         "preview_truncated": (
                             latest_prompt is not None and len(latest_prompt) > preview_chars
@@ -571,7 +602,7 @@ class SQLiteSessionStore:
                     "session_id": row["session_id"],
                     "sequence": int(row["sequence"]),
                     "created_at": row["created_at"],
-                    "excerpt": excerpt,
+                    "excerpt": _redact_session_text(excerpt),
                 }
             )
             if len(matches) >= limit:
