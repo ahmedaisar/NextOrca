@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import Application
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout import Dimension, HSplit, Layout, ScrollOffsets, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
