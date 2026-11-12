@@ -33,7 +33,7 @@ def test_list_sessions_is_workspace_scoped_and_returns_bounded_metadata(tmp_path
         {"role": "user", "content": "Other project task"},
     )
 
-    sessions = store.list_sessions(workspace, limit=10, preview_chars=12)
+    sessions = store.list_sessions(workspace, limit=10, preview_chars=11)
 
     assert len(sessions) == 1
     assert sessions[0]["session_id"] == "session-a"
