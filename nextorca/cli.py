@@ -31,6 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nextorca",
         description="NextOrca terminal coding agent. Start an interactive session or pass a prompt.",
+        epilog=(
+            "Session history: nextorca sessions list | nextorca sessions search <query> "
+            "| nextorca sessions show <session-id>."
+        ),
     )
     parser.add_argument("prompt", nargs="?", help="Task or question for the coding agent.")
     parser.add_argument(
