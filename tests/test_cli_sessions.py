@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-import nextorca.cli as cli
+from nextorca import cli
 from nextorca.session_store import SQLiteSessionStore
 
 
