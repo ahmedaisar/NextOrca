@@ -311,17 +311,25 @@ class AgentRuntime:
         block = "\n\n".join(sections)
         if len(block) > 6_000:
             block = block[:5_980] + "\n[memory context truncated]"
+        candidate = [
+            messages[0],
+            {"role": "system", "content": "Selected project memory (reference only):\\n\\n" + block},
+            *messages[1:],
+        ]
+        try:
+            self.context_budget.fit(candidate)
+        except ContextLimitError:
+            # Optional memory must never turn an otherwise viable prompt into a hard failure.
+            self.context_budget.fit(messages)
+            return messages
+
         self._emit(
             "project_memory_selected",
             memory_ids=[item["memory_id"] for item in selected],
             memory_count=len(selected),
             memory_chars=len(block),
         )
-        return [
-            messages[0],
-            {"role": "system", "content": "Selected project memory (reference only):\n\n" + block},
-            *messages[1:],
-        ]
+        return candidate
 
     def context_status(self) -> dict[str, Any] | None:
         session_id = self.session_id or self.last_session_id
