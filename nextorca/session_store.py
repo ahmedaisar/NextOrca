@@ -28,7 +28,7 @@ _SESSION_PRIVATE_KEY = re.compile(
 
 
 _PROJECT_MEMORY_TYPES = frozenset({"decision", "command", "fact", "convention"})
-_PROJECT_MEMORY_TOKENS = re.compile(r"[\w./:+-]{2,}", re.UNICODE)
+_PROJECT_MEMORY_TOKENS = re.compile(r"[\w]+(?:[./:+-][\w]+)*", re.UNICODE)
 _PROJECT_MEMORY_STOPWORDS = frozenset(
     {
         "about", "after", "also", "and", "are", "because", "before", "being",
