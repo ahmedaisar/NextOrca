@@ -6,6 +6,7 @@
 
 ## Status
 
+- **Execution state**: IN PROGRESS in [PR #30](https://github.com/ahmedaisar/NextOrca/pull/30).
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
