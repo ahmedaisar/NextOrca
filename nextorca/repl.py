@@ -9,6 +9,8 @@ from nextorca.runtime import AgentRuntime
 HELP = """NextOrca interactive commands:
   /help       Show this help
   /session    Show the current session ID
+  /sessions   List recent sessions for this workspace
+  /resume     /resume <session-id-or-index> to continue a saved session
   /new        Start a fresh conversation
   /tools      List available tools
   /route      Show or set auto/local/cloud routing
@@ -66,6 +68,58 @@ def run_repl(runtime: AgentRuntime) -> None:
             continue
         if prompt == "/tools":
             print("\n".join(runtime.tools.names) or "No tools registered.")
+            continue
+        if prompt == "/sessions":
+            if runtime.session_store is None or runtime.workspace_root is None:
+                print("Persistent session storage is not configured.")
+                continue
+            try:
+                sessions = runtime.session_store.list_sessions(runtime.workspace_root, limit=20)
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"Could not list sessions: {type(exc).__name__}: {exc}", file=sys.stderr)
+                continue
+            if not sessions:
+                print("No saved sessions for this workspace.")
+                continue
+            for index, session in enumerate(sessions, start=1):
+                preview = session["preview"] or "(no user prompt yet)"
+                print(
+                    f"{index}. {session['session_id']} · {session['updated_at']} · "
+                    f"{session['message_count']} messages · {preview}"
+                )
+            continue
+        if prompt == "/resume" or prompt.startswith("/resume "):
+            argument = prompt[len("/resume"):].strip()
+            if not argument:
+                print("Usage: /resume <session-id-or-index>")
+                continue
+            if runtime.session_store is None or runtime.workspace_root is None:
+                print("Persistent session storage is not configured.")
+                continue
+            try:
+                if argument.isdecimal():
+                    sessions = runtime.session_store.list_sessions(
+                        runtime.workspace_root,
+                        limit=20,
+                    )
+                    position = int(argument)
+                    if position < 1 or position > len(sessions):
+                        print("Session index is not in the current /sessions list.")
+                        continue
+                    selected = sessions[position - 1]
+                else:
+                    selected = runtime.session_store.get_session_overview(
+                        argument,
+                        workspace=runtime.workspace_root,
+                    )
+                if selected is None:
+                    print("Session not found in this workspace.")
+                    continue
+                runtime.session_id = selected["session_id"]
+                runtime.last_session_id = selected["session_id"]
+                print(f"Resumed session {selected['session_id']}.")
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"Could not resume session: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if prompt == "/route" or prompt.startswith("/route "):
             if not isinstance(runtime.provider, HybridRouter):
