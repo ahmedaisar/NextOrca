@@ -9,6 +9,8 @@ from nextorca.runtime import AgentRuntime
 HELP = """NextOrca interactive commands:
   /help       Show this help
   /session    Show the current session ID
+  /sessions   List recent sessions in this workspace
+  /resume     /resume <session-id-or-index>
   /new        Start a fresh conversation
   /tools      List available tools
   /route      Show or set auto/local/cloud routing
@@ -37,7 +39,9 @@ def _resume_session(runtime: AgentRuntime, selection: str) -> str:
     if runtime.session_store is None or runtime.workspace_root is None:
         raise ValueError("Session resume requires persistent sessions.")
     metadata = runtime.session_store.get_session(selection)
-    if metadata is not None and metadata["workspace"] == runtime.workspace_root:
+    if metadata is not None:
+        if metadata["workspace"] != runtime.workspace_root:
+            raise ValueError("Session is no longer available in this workspace.")
         session_id = selection
     else:
         sessions = _available_sessions(runtime)
