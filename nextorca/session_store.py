@@ -12,7 +12,7 @@ from typing import Any
 _SESSION_SECRET_ASSIGNMENT = re_compile(
     r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|"
     r"token|secret|password|passwd|authorization|private[_-]?key)"
-    r"(\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
+    r"(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|(?:Bearer|Basic)\s+[^\s,;]+|[^\s,;]+)"
 )
 _SESSION_BEARER_CREDENTIAL = re.compile(r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+")
 _SESSION_KNOWN_TOKEN = re.compile(
