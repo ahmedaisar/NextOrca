@@ -137,7 +137,7 @@ def test_search_sessions_uses_literal_user_text_and_workspace_scope(tmp_path):
     assert results[0]["session_id"] == current
     assert results[0]["sequence"] == 3
     assert "%_café" in results[0]["excerpt"]
-    assert len(results[0]["excerpt"]) <= 203
+    assert len(results[0]["excerpt"]) <= 200
 
 
 def test_search_sessions_caps_results_and_rejects_invalid_bounds(tmp_path):
