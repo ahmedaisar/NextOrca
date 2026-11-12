@@ -27,7 +27,7 @@ def test_repl_memory_commands_add_list_search_show_forget_and_toggle(tmp_path):
         f'add convention {session_id} {sequence} "Release branches use feat slash prefix."',
     )
     memory_id = added.split()[-1]
-    assert "operator-confirmed" in _memory_command(runtime, "status")
+    assert "Project memory is ON" in _memory_command(runtime, "status")
 
     assert memory_id in _memory_command(runtime, "list")
     assert memory_id in _memory_command(runtime, "search release branches")
