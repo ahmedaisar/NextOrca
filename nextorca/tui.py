@@ -122,7 +122,14 @@ class TerminalApprovalPolicy:
 class TerminalWorkspace:
     """Prompt-toolkit view over the existing AgentRuntime and session store."""
 
-    def __init__(self, runtime: AgentRuntime, approval: TerminalApprovalPolicy) -> None:
+    def __init__(
+        self,
+        runtime: AgentRuntime,
+        approval: TerminalApprovalPolicy,
+        *,
+        input: Any | None = None,
+        output: Any | None = None,
+    ) -> None:
         self.runtime = runtime
         self.approval = approval
         self._lock = threading.RLock()
@@ -149,7 +156,7 @@ class TerminalWorkspace:
             wrap_lines=True,
             always_hide_cursor=True,
         )
-        self._application = self._build_application()
+        self._application = self._build_application(input=input, output=output)
         self.approval.attach(self._application.invalidate)
         runtime.on_event = self._handle_event
 
@@ -241,7 +248,7 @@ class TerminalWorkspace:
             status = f"{status} · Enter send · F1 help · Ctrl-Q quit"
         return FormattedText([("class:footer", f" {status} ")])
 
-    def _build_application(self) -> Application[Any]:
+    def _build_application(self, *, input: Any | None, output: Any | None) -> Application[Any]:
         keys = KeyBindings()
 
         @keys.add("c-q")
@@ -295,7 +302,6 @@ class TerminalWorkspace:
                     height=Dimension(weight=1, min=3),
                     wrap_lines=True,
                     always_hide_cursor=True,
-                    scroll_offsets=None,
                 ),
                 self._approval_window,
                 Frame(self.input, title="Message"),
@@ -320,6 +326,8 @@ class TerminalWorkspace:
             full_screen=True,
             mouse_support=True,
             erase_when_done=False,
+            input=input,
+            output=output,
         )
 
     def _is_busy(self) -> bool:
@@ -610,6 +618,12 @@ class TerminalWorkspace:
             self.approval.resolve(False)
 
 
-def run_tui(runtime: AgentRuntime, approval: TerminalApprovalPolicy) -> None:
+def run_tui(
+    runtime: AgentRuntime,
+    approval: TerminalApprovalPolicy,
+    *,
+    input: Any | None = None,
+    output: Any | None = None,
+) -> None:
     """Run NextOrca in the full-screen terminal UI."""
-    TerminalWorkspace(runtime, approval).run()
+    TerminalWorkspace(runtime, approval, input=input, output=output).run()
