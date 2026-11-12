@@ -697,7 +697,7 @@ class SQLiteSessionStore:
         source_message_sequence: int,
     ) -> dict[str, Any]:
         """Store an operator-confirmed project memory linked to a user message."""
-        if memory_type not in _PROJECT_MEMORY_TYPES:
+        if not isinstance(memory_type, str) or memory_type not in _PROJECT_MEMORY_TYPES:
             raise ValueError(
                 "Memory type must be one of: decision, command, fact, convention."
             )
@@ -743,6 +743,14 @@ class SQLiteSessionStore:
             if not isinstance(source_message, dict) or source_message.get("role") != "user":
                 raise ValueError("Memory provenance must reference a user-authored session message.")
 
+            current_count = connection.execute(
+                "SELECT COUNT(*) AS item_count FROM project_memories WHERE workspace = ?",
+                (workspace,),
+            ).fetchone()
+            if int(current_count["item_count"]) >= MAX_PROJECT_MEMORY_ITEMS:
+                raise SessionStoreError(
+                    f"Project memory is limited to {MAX_PROJECT_MEMORY_ITEMS} records per workspace."
+                )
             connection.execute(
                 """
                 INSERT INTO project_memories(
