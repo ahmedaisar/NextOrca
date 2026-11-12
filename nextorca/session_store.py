@@ -10,17 +10,17 @@ from typing import Any
 
 
 _SESSION_SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\\b(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|"
+    r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|"
     r"token|secret|password|passwd|authorization|private[_-]?key)"
-    r"(\\s*[:=]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)"
+    r"(\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
 )
-_SESSION_BEARER_CREDENTIAL = re.compile(r"(?i)\\b(Bearer|Basic)\\s+[A-Za-z0-9._~+/=-]+")
+_SESSION_BEARER_CREDENTIAL = re.compile(r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+")
 _SESSION_KNOWN_TOKEN = re.compile(
-    r"(?i)\\b(?:sk-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"(?i)\b(?:sk-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|"
     r"github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})"
 )
 _SESSION_PRIVATE_KEY = re.compile(
-    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\\s\\S]*?"
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?"
     r"-----END [A-Z0-9 ]*PRIVATE KEY-----"
 )
 
