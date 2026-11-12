@@ -10,7 +10,8 @@ from prompt_toolkit import Application
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import Dimension, HSplit, Layout, Window
+from prompt_toolkit.data_structures import Point
+from prompt_toolkit.layout import Dimension, HSplit, Layout, ScrollOffsets, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
@@ -68,6 +69,7 @@ class TerminalApprovalPolicy:
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._pending: _PendingApproval | None = None
+        self._closed = False
         self._invalidate: Callable[[], None] = lambda: None
 
     def attach(self, invalidate: Callable[[], None]) -> None:
@@ -80,6 +82,11 @@ class TerminalApprovalPolicy:
 
     def is_pending(self) -> bool:
         return self.pending is not None
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+        self.resolve(False)
 
     def resolve(self, approved: bool) -> bool:
         with self._lock:
@@ -106,7 +113,7 @@ class TerminalApprovalPolicy:
 
         pending = _PendingApproval(tool_name=tool.name, preview=preview)
         with self._lock:
-            if self._pending is not None:
+            if self._closed or self._pending is not None:
                 return False
             self._pending = pending
 
@@ -148,7 +155,7 @@ class TerminalWorkspace:
             wrap_lines=False,
             focus_on_click=True,
             accept_handler=self._accept_input,
-            read_only=Condition(approval.is_pending),
+            read_only=Condition(self._input_locked),
         )
         self._approval_window = Window(
             content=FormattedTextControl(self._approval_fragments),
@@ -298,10 +305,14 @@ class TerminalWorkspace:
             [
                 Window(content=FormattedTextControl(self._header), height=1),
                 Window(
-                    content=FormattedTextControl(self._transcript_fragments),
+                    content=FormattedTextControl(
+                        self._transcript_fragments,
+                        get_cursor_position=self._transcript_cursor,
+                    ),
                     height=Dimension(weight=1, min=3),
                     wrap_lines=True,
                     always_hide_cursor=True,
+                    scroll_offsets=ScrollOffsets(top=1, bottom=1),
                 ),
                 self._approval_window,
                 Frame(self.input, title="Message"),
@@ -333,6 +344,15 @@ class TerminalWorkspace:
     def _is_busy(self) -> bool:
         with self._lock:
             return self._busy
+
+    def _input_locked(self) -> bool:
+        return self._is_busy() or self.approval.is_pending()
+
+    def _transcript_cursor(self) -> Point:
+        with self._lock:
+            line_count = sum(text.count("\\n") for _role, text in self._messages)
+            line_count += self._partial.count("\\n")
+        return Point(x=0, y=max(0, line_count))
 
     def _set_notice(self, message: str) -> None:
         with self._lock:
@@ -615,7 +635,7 @@ class TerminalWorkspace:
             self._application.run()
         finally:
             # If the UI exits unexpectedly, any wait in the approval broker fails closed.
-            self.approval.resolve(False)
+            self.approval.close()
 
 
 def run_tui(
