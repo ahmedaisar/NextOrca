@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sqlite3
 import uuid
 from pathlib import Path
+from re import compile as re_compile
 from typing import Any
 
 
-_SESSION_SECRET_ASSIGNMENT = re.compile(
+_SESSION_SECRET_ASSIGNMENT = re_compile(
     r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|"
     r"token|secret|password|passwd|authorization|private[_-]?key)"
     r"(\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
