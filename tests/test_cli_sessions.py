@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from nextorca.cli import main
+from nextorca.cli import build_parser, main
 from nextorca.session_store import SQLiteSessionStore
 
 
@@ -69,3 +69,12 @@ def test_sessions_search_and_show_commands_are_workspace_scoped(tmp_path, capsys
     ])
     assert hidden_code == 1
     assert "not found in this workspace" in capsys.readouterr().err
+
+
+
+def test_main_cli_help_mentions_provider_free_session_commands():
+    help_text = build_parser().format_help()
+
+    assert "nextorca sessions list" in help_text
+    assert "nextorca sessions search" in help_text
+    assert "nextorca sessions show" in help_text
