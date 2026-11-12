@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Execute this as a focused UI project. Preserve the existing REPL as a supported fallback and keep the agent runtime, provider routing, SQLite store, workspace tools and approval policy as the sources of truth. Do not copy Atomic Agent's TUI architecture wholesale. Run each verification command before continuing. Update the plan index when the implementation is complete.
 
-> **Drift check (run first)**: `git diff --stat d80c604..HEAD -- nextorca/cli.py nextorca/repl.py nextorca/runtime.py nextorca/types.py pyproject.toml tests`. This plan is refreshed after Plan 006 (PR #26) added session discovery APIs and REPL/CLI session commands. If any in-scope path changed again after the baseline, compare this plan's current-state notes to the live code and revise or stop before editing.
+> **Drift check (run first)**: `git diff --stat de8fd1e..HEAD -- nextorca/cli.py nextorca/repl.py nextorca/runtime.py nextorca/types.py pyproject.toml tests`. This plan is refreshed after Plan 006 (PR #26) added session discovery APIs and REPL/CLI session commands. If any in-scope path changed again after the baseline, compare this plan's current-state notes to the live code and revise or stop before editing.
 
 ## Status
 
@@ -11,7 +11,7 @@
 - **Risk**: MED
 - **Depends on**: none (Plan 006 provides a session service that the UI should consume when available)
 - **Category**: direction
-- **Planned at**: commit `7ca0952`, 2026-11-12
+- **Planned at**: commit `de8fd1e`, 2026-11-12
 
 ## Why this matters
 
