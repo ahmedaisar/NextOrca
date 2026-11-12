@@ -2,17 +2,17 @@
 
 > **Executor instructions**: Treat this as a privacy-sensitive, staged design/prototype plan, not permission to build a large memory platform. First produce a minimal design and acceptance corpus. Store memory locally and make every remembered fact inspectable and deletable. Do not add cloud embeddings or background reflection in the first increment.
 
-> **Drift check (run first)**: `git diff --stat 7ca0952..HEAD -- nextorca/session_store.py nextorca/context.py nextorca/runtime.py nextorca/cli.py tests`. Revalidate the session storage and context assembly before designing the memory boundary.
+> **Drift check (run first)**: `git diff --stat 615233e..HEAD -- nextorca/session_store.py nextorca/context.py nextorca/runtime.py nextorca/cli.py nextorca/repl.py nextorca/tui.py tests README.md docs/project-memory.md docs/ROADMAP.md`. This implementation is stacked on the session/TUI and clean provider-registry branches. Compare the live SQLite schema, context injection and commands before editing; review any later drift before proceeding.
 
 ## Status
 
-- **Execution state**: IN PROGRESS in [PR #30](https://github.com/ahmedaisar/NextOrca/pull/30).
+- **Execution state**: COMPLETE — [PR #30](https://github.com/ahmedaisar/NextOrca/pull/30), latest PR CI passed.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: plans/006-session-discovery-and-resume.md
 - **Category**: direction
-- **Planned at**: commit `7ca0952`, 2026-11-12
+- **Planned at**: commit `615233e`, 2026-11-12
 
 ## Why this matters
 
@@ -22,8 +22,10 @@ NextOrca's current compaction keeps a useful summary inside one session, but it 
 
 - `nextorca/context.py` implements a deterministic character-budget fit that prunes older tool and assistant output while preserving required messages; it is not a persistent recall index.
 - `nextorca/runtime.py` stores append-only message/event history and compaction summaries. Context compaction is for reconstructing one session's prompt.
-- `nextorca/session_store.py` persists sessions, messages, events and checkpoints. Its `sessions` table carries ID, workspace, model and timestamps; message history is associated with session ID.
-- `docs/ROADMAP.md` identifies session browsing/search and better resume UX, but it does not define cross-session semantic memory. Memory is therefore an optional extension, not a blocker for core coding-agent quality.
+- `nextorca/session_store.py` persists sessions, messages, events and checkpoints. Its `sessions` table carries ID, workspace, model and timestamps; message history is associated with session ID. The implementation in this branch adds `project_memories` and `project_memory_settings` tables to the same owner-only SQLite database, with a hard 2,000-record workspace cap.
+- `nextorca/runtime.py` now uses the lexical search API to inject at most four matched records into an ephemeral system-context block. It applies the normal context budget and drops optional memory if it would make an otherwise valid prompt fail.
+- `nextorca/cli.py` and `nextorca/repl.py` expose `memory add/list/show/search/forget/on/off/status`; the TUI routes `/memory` commands through the same REPL command helper.
+- `docs/project-memory.md` documents explicit creation, provenance, credential rejection, local storage and the fact that selected memory enters the current provider prompt. Balanced mode can route prompts to cloud; local-only mode preserves the local-inference boundary.
 - Existing tests use temporary SQLite files and explicit workspace binding. Preserve the principle that one project's memory must not leak into another project's sessions.
 
 ## Commands you will need
@@ -39,10 +41,11 @@ NextOrca's current compaction keeps a useful summary inside one session, but it 
 ## Scope
 
 **In scope**
-- A separate local memory module/store with project/workspace scope and explicit provenance fields.
-- Runtime context assembly only for bounded, relevant memory excerpts.
-- CLI/REPL commands to inspect, add, forget/delete and disable memory.
-- Focused tests and documentation for provenance, privacy and retention behavior.
+- `nextorca/session_store.py` — local project memory tables and workspace-scoped CRUD/retrieval methods in the existing 0600 SQLite store.
+- `nextorca/runtime.py` — ephemeral, bounded prompt injection with provenance and context-budget fallback.
+- `nextorca/cli.py`, `nextorca/repl.py`, and `nextorca/tui.py` — inspect, add, forget, preview and enable/disable commands.
+- Focused tests under `tests/test_project_memory_*.py` and `tests/test_cli_project_memory.py` / `tests/test_repl_project_memory.py`.
+- `docs/project-memory.md`, `README.md`, and `docs/ROADMAP.md`.
 
 **Out of scope**
 - Replacing or rewriting session transcripts.
@@ -90,10 +93,10 @@ Create a small fixture corpus drawn from synthetic project decisions and command
 
 ## Done criteria
 
-- [ ] Memory is local-only, project-scoped, inspectable and deletable.
-- [ ] Every item has source provenance and clear state (user-authored or operator-approved).
-- [ ] Memory can be disabled with a guarantee that it is not sent to the provider.
-- [ ] Retrieval is bounded, deterministic and covered by synthetic evaluations.
+- [ ] Memory is stored locally, project-scoped, inspectable and deletable.
+- [ ] Every item has source provenance and `operator_confirmed` status; creation is explicit, never automatic.
+- [ ] Memory can be disabled with a guarantee that no memory content is injected into provider messages.
+- [ ] Retrieval is bounded, deterministic and covered by synthetic evaluations; optional memories are dropped if they would exceed the context budget.
 - [ ] Existing session transcripts and compaction behavior are unchanged.
 - [ ] Full pytest, Ruff and compileall pass.
 - [ ] Documentation explains what is stored, why, where and how to forget it.
