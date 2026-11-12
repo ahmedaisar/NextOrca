@@ -68,14 +68,22 @@ class Workspace:
             raise WorkspaceError("Path must identify a file within the workspace.")
         return resolved
 
+    @staticmethod
+    def _read_bounded_bytes(path: Path, limit: int) -> bytes | None:
+        """Read at most one byte beyond the configured limit, without buffered read-ahead."""
+        with path.open("rb", buffering=0) as handle:
+            data = handle.read(limit + 1)
+        return None if len(data) > limit else data
+
     def read(self, file_path: str, offset: int = 0, limit: int | None = None) -> str:
         path = self.resolve(file_path, allow_root=False)
         if not path.is_file():
             raise ToolExecutionError("Read target is not a file.")
         try:
-            if path.stat().st_size > self.max_read_bytes:
+            data = self._read_bounded_bytes(path, self.max_read_bytes)
+            if data is None:
                 raise ToolExecutionError("File exceeds the configured read-size limit.")
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = data.decode("utf-8", errors="replace").splitlines()
         except OSError as exc:
             raise ToolExecutionError("File could not be read.") from exc
         if offset < 0 or (limit is not None and limit < 0):
@@ -143,9 +151,10 @@ class Workspace:
                 continue
             scanned += 1
             try:
-                if resolved.stat().st_size > self.max_read_bytes:
+                data = self._read_bounded_bytes(resolved, self.max_read_bytes)
+                if data is None:
                     continue
-                lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
+                lines = data.decode("utf-8", errors="replace").splitlines()
             except OSError:
                 continue
             for line_number, line in enumerate(lines, start=1):
@@ -184,9 +193,10 @@ class Workspace:
         if not path.is_file():
             raise ToolExecutionError("Mutation target is not a regular file.")
         try:
-            if path.stat().st_size > self.max_write_bytes:
+            data = self._read_bounded_bytes(path, self.max_write_bytes)
+            if data is None:
                 raise ToolExecutionError("Mutation target exceeds the configured size limit.")
-            return True, path.read_text(encoding="utf-8")
+            return True, data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ToolExecutionError("Only UTF-8 text files can be edited.") from exc
         except OSError as exc:
