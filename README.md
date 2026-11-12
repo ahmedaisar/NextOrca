@@ -94,7 +94,7 @@ uv run nextorca \
   "Explain the main modules and how they fit together."
 ```
 
-One-shot mode is read-only by default. Use the interactive REPL for edits and shell execution.
+One-shot mode is read-only by default. Use the interactive TUI or classic REPL for edits and shell execution.
 
 ### 4. Connect a hosted provider (optional)
 
