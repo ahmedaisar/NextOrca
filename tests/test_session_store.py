@@ -167,6 +167,7 @@ def test_session_previews_and_search_redact_common_secrets_and_terminal_controls
 
     for text in (listed[0]["preview"], searched[0]["excerpt"]):
         assert "very-secret-value" not in text
+        assert "bearer-secret-value" not in text
         assert "sk-12345678901234567890" not in text
         assert "\x1b" not in text
         assert "[REDACTED]" in text
