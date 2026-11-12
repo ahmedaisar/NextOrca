@@ -92,3 +92,35 @@ def test_disabled_or_unrelated_project_memory_is_not_added_to_provider_context(t
     store.set_project_memory_enabled(workspace, False)
     runtime.run("Explain the terminal theme preference.")
     assert not any("Selected project memory" in message.get("content", "") for message in provider.requests[1])
+
+
+def test_optional_memory_is_dropped_when_it_would_exceed_context_budget(tmp_path):
+    from nextorca.runtime import AgentConfig
+
+    store = SQLiteSessionStore(tmp_path / "sessions.db")
+    workspace = str(tmp_path)
+    session_id = store.create_session(workspace=workspace, model="mock")
+    store.append_message(session_id, {"role": "system", "content": "System instructions."})
+    sequence = store.append_message(session_id, {"role": "user", "content": "Redis context decision."})
+    store.add_project_memory(
+        workspace=workspace,
+        memory_type="fact",
+        content="Redis " + ("cache-context " * 120),
+        source_session_id=session_id,
+        source_message_sequence=sequence,
+    )
+    runtime = AgentRuntime(
+        provider=MemoryProvider(),
+        model="mock",
+        tools=ToolRegistry(),
+        session_store=store,
+        workspace_root=workspace,
+        session_id=session_id,
+        config=AgentConfig(max_context_chars=1_024),
+    )
+    messages = [
+        {"role": "system", "content": "System instructions."},
+        {"role": "user", "content": "How do Redis keys work?"},
+    ]
+
+    assert runtime._with_project_memory(messages, "How do Redis keys work?") == messages
