@@ -1,6 +1,6 @@
 # Local and Cloud Orchestration
 
-NextOrca keeps one agent runtime, tool registry, session and permission policy while routing model turns between providers.
+NextOrca keeps one agent runtime, tool registry, session and permission policy while routing model turns between providers. Transport construction is isolated in `nextorca/provider_registry.py`; `HybridRouter` receives only `ChatProvider` instances.
 
 ## Configure both providers
 
@@ -33,3 +33,14 @@ Auto routing sends repository exploration and explanation to local when availabl
 Local-only mode prevents cloud selection and fallback. Cloud route overrides are rejected while local-only is active.
 
 The classifier is deterministic and intentionally simple. It is not a learned quality estimator. Manual route controls remain available, and route decisions are displayed in the interactive terminal.
+
+
+## Provider adapter selection
+
+The CLI accepts a transport adapter ID independently for the single endpoint and local/cloud endpoints:
+
+- `--provider-adapter` / `NEXTORCA_PROVIDER_ADAPTER`
+- `--local-provider-adapter` / `NEXTORCA_LOCAL_PROVIDER_ADAPTER`
+- `--cloud-provider-adapter` / `NEXTORCA_CLOUD_PROVIDER_ADAPTER`
+
+The current registry has one tested adapter: `openai-compatible`. An unknown adapter returns a configuration error; it does not silently fall back to another protocol. In local-only mode, the cloud adapter is not constructed. See [the adapter compatibility contract](provider-adapter-contract.md) before registering another transport.
