@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
+import importlib
 
 openai_compatible = importlib.import_module("nextorca.openai_compatible")
 provider = importlib.import_module("nextorca.provider")
