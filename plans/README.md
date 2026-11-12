@@ -11,9 +11,9 @@ This is a quick audit, not a full security or architecture review. The review fo
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
-| 001 | Keep non-sandbox MCP validation in fast PR checks | P1 | S | — | PR #22 (open) |
-| 002 | Enforce workspace byte limits while reading | P1 | M | — | PR #23 (open) |
-| 003 | Reject non-finite MCP numeric arguments | P2 | S | — | PR #24 (open) |
+| 001 | Keep non-sandbox MCP validation in fast PR checks | P1 | S | — | DONE — PR #22 |
+| 002 | Enforce workspace byte limits while reading | P1 | M | — | DONE — PR #23 |
+| 003 | Reject non-finite MCP numeric arguments | P2 | S | — | DONE — PR #24 |
 
 Execute one plan per implementation PR. The plans are independent. Plan 001 is especially relevant when the lightweight PR workflow from PR #20 is merged: that workflow intentionally does not install Bubblewrap, so sandbox-only tests must be skipped individually rather than hiding all MCP tests.
 
