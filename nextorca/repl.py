@@ -9,6 +9,8 @@ from nextorca.runtime import AgentRuntime
 HELP = """NextOrca interactive commands:
   /help       Show this help
   /session    Show the current session ID
+  /sessions   List recent sessions in this workspace
+  /resume     /resume <session-id-or-index>
   /new        Start a fresh conversation
   /tools      List available tools
   /route      Show or set auto/local/cloud routing
@@ -23,6 +25,40 @@ HELP = """NextOrca interactive commands:
 
 Type a request in natural language to work on the current project.
 Ctrl-C interrupts the current request; Ctrl-D exits."""
+
+
+
+
+def _available_sessions(runtime: AgentRuntime) -> list[dict]:
+    if runtime.session_store is None or runtime.workspace_root is None:
+        return []
+    return runtime.session_store.list_sessions(runtime.workspace_root, limit=20)
+
+
+def _resume_session(runtime: AgentRuntime, selection: str) -> str:
+    if runtime.session_store is None or runtime.workspace_root is None:
+        raise ValueError("Session resume requires persistent sessions.")
+    metadata = runtime.session_store.get_session(selection)
+    if metadata is not None:
+        if metadata["workspace"] != runtime.workspace_root:
+            raise ValueError("Session is no longer available in this workspace.")
+        session_id = selection
+    else:
+        sessions = _available_sessions(runtime)
+        selected = None
+        if selection.isdigit():
+            index = int(selection)
+            if 1 <= index <= len(sessions):
+                selected = sessions[index - 1]
+        if selected is None:
+            raise ValueError("No session matched that ID or list index.")
+        session_id = selected["session_id"]
+        metadata = runtime.session_store.get_session(session_id)
+        if metadata is None or metadata["workspace"] != runtime.workspace_root:
+            raise ValueError("Session is no longer available in this workspace.")
+    runtime.session_id = session_id
+    runtime.last_session_id = session_id
+    return session_id
 
 
 def run_repl(runtime: AgentRuntime) -> None:
@@ -63,6 +99,31 @@ def run_repl(runtime: AgentRuntime) -> None:
             runtime.session_id = None
             runtime.last_session_id = None
             print("Started a new conversation on the next prompt.")
+            continue
+        if prompt == "/sessions":
+            sessions = _available_sessions(runtime)
+            if not sessions:
+                print("No saved sessions for this workspace.")
+            else:
+                for index, session in enumerate(sessions, start=1):
+                    preview = session.get("last_user_prompt") or "(no user prompt yet)"
+                    if session.get("preview_truncated"):
+                        preview += "…"
+                    print(
+                        f"{index}. {session['session_id']} · {session['model']} · "
+                        f"{session['message_count']} messages · {preview}"
+                    )
+            continue
+        if prompt.startswith("/resume "):
+            selection = prompt[len("/resume "):].strip()
+            if not selection:
+                print("Usage: /resume <session-id-or-index>")
+                continue
+            try:
+                session_id = _resume_session(runtime, selection)
+                print(f"Resuming session {session_id}.")
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"\nnextorca resume: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if prompt == "/tools":
             print("\n".join(runtime.tools.names) or "No tools registered.")
