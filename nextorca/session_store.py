@@ -685,3 +685,296 @@ class SQLiteSessionStore:
                 latest_prompt is not None and len(latest_prompt) > preview_chars
             ),
         }
+
+
+    def add_project_memory(
+        self,
+        *,
+        workspace: str,
+        memory_type: str,
+        content: str,
+        source_session_id: str,
+        source_message_sequence: int,
+    ) -> dict[str, Any]:
+        """Store an operator-confirmed project memory linked to a user message."""
+        if memory_type not in _PROJECT_MEMORY_TYPES:
+            raise ValueError(
+                "Memory type must be one of: decision, command, fact, convention."
+            )
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Memory content must not be empty.")
+        normalized = content.strip()
+        if len(normalized) > MAX_PROJECT_MEMORY_CHARS:
+            raise ValueError(
+                f"Memory content must be at most {MAX_PROJECT_MEMORY_CHARS} characters."
+            )
+        if _redact_session_text(normalized) != normalized:
+            raise ValueError("Memory content appears to contain a credential; remove it before saving.")
+        if (
+            not isinstance(source_message_sequence, int)
+            or isinstance(source_message_sequence, bool)
+            or source_message_sequence < 1
+        ):
+            raise ValueError("Source message sequence must be a positive integer.")
+        if not isinstance(source_session_id, str) or not source_session_id.strip():
+            raise ValueError("A source session ID is required.")
+
+        memory_id = str(uuid.uuid4())
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            source = connection.execute(
+                """
+                SELECT m.message_json
+                FROM sessions AS s
+                JOIN messages AS m ON m.session_id = s.session_id
+                WHERE s.session_id = ? AND s.workspace = ? AND m.sequence = ?
+                """,
+                (source_session_id, workspace, source_message_sequence),
+            ).fetchone()
+            if source is None:
+                raise SessionStoreError(
+                    "Source message was not found in the selected workspace and session."
+                )
+            try:
+                source_message = json.loads(source["message_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise SessionStoreError("Source session message contains invalid JSON.") from exc
+            if not isinstance(source_message, dict) or source_message.get("role") != "user":
+                raise ValueError("Memory provenance must reference a user-authored session message.")
+
+            connection.execute(
+                """
+                INSERT INTO project_memories(
+                    memory_id, workspace, memory_type, content,
+                    source_session_id, source_message_sequence, verification_status
+                ) VALUES (?, ?, ?, ?, ?, ?, 'operator_confirmed')
+                """,
+                (
+                    memory_id,
+                    workspace,
+                    memory_type,
+                    normalized,
+                    source_session_id,
+                    source_message_sequence,
+                ),
+            )
+            connection.commit()
+        except sqlite3.IntegrityError as exc:
+            connection.rollback()
+            raise SessionStoreError("This project memory already exists or could not be saved.") from exc
+        except (sqlite3.Error, SessionStoreError, ValueError):
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+        result = self.get_project_memory(memory_id, workspace=workspace)
+        if result is None:
+            raise SessionStoreError("Project memory could not be loaded after saving.")
+        return result
+
+    def list_project_memories(
+        self,
+        workspace: str,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 200
+        ):
+            raise ValueError("Project memory list limit must be between 1 and 200.")
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT memory_id, memory_type, content, source_session_id,
+                       source_message_sequence, verification_status, created_at, updated_at
+                FROM project_memories
+                WHERE workspace = ?
+                ORDER BY updated_at DESC, memory_id DESC
+                LIMIT ?
+                """,
+                (workspace, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Project memories could not be listed.") from exc
+        finally:
+            connection.close()
+        return [
+            {
+                "memory_id": row["memory_id"],
+                "memory_type": row["memory_type"],
+                "content": _redact_session_text(row["content"]),
+                "source_session_id": row["source_session_id"],
+                "source_message_sequence": int(row["source_message_sequence"]),
+                "verification_status": row["verification_status"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def get_project_memory(
+        self,
+        memory_id: str,
+        *,
+        workspace: str,
+    ) -> dict[str, Any] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT memory_id, memory_type, content, source_session_id,
+                       source_message_sequence, verification_status, created_at, updated_at
+                FROM project_memories
+                WHERE memory_id = ? AND workspace = ?
+                """,
+                (memory_id, workspace),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Project memory could not be loaded.") from exc
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return {
+            "memory_id": row["memory_id"],
+            "memory_type": row["memory_type"],
+            "content": _redact_session_text(row["content"]),
+            "source_session_id": row["source_session_id"],
+            "source_message_sequence": int(row["source_message_sequence"]),
+            "verification_status": row["verification_status"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def forget_project_memory(self, memory_id: str, *, workspace: str) -> bool:
+        connection = self._connect()
+        try:
+            cursor = connection.execute(
+                "DELETE FROM project_memories WHERE memory_id = ? AND workspace = ?",
+                (memory_id, workspace),
+            )
+            connection.commit()
+            return cursor.rowcount == 1
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise SessionStoreError("Project memory could not be deleted.") from exc
+        finally:
+            connection.close()
+
+    def set_project_memory_enabled(self, workspace: str, enabled: bool) -> None:
+        if not isinstance(enabled, bool):
+            raise ValueError("Project memory enabled state must be a boolean.")
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO project_memory_settings(workspace, enabled)
+                VALUES (?, ?)
+                ON CONFLICT(workspace) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (workspace, 1 if enabled else 0),
+            )
+            connection.commit()
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise SessionStoreError("Project memory setting could not be saved.") from exc
+        finally:
+            connection.close()
+
+    def project_memory_enabled(self, workspace: str) -> bool:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT enabled FROM project_memory_settings WHERE workspace = ?",
+                (workspace,),
+            ).fetchone()
+            return row is None or bool(row["enabled"])
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Project memory setting could not be loaded.") from exc
+        finally:
+            connection.close()
+
+    def search_project_memories(
+        self,
+        workspace: str,
+        query: str,
+        *,
+        limit: int = 4,
+        scan_limit: int = MAX_PROJECT_MEMORY_ITEMS,
+        excerpt_chars: int = 1_000,
+    ) -> list[dict[str, Any]]:
+        """Return bounded lexical matches with provenance; does not call an embedding API."""
+        if not self.project_memory_enabled(workspace):
+            return []
+        if not isinstance(query, str) or not query.strip() or len(query) > 4_000:
+            return []
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 5:
+            raise ValueError("Project memory result limit must be between 1 and 5.")
+        if (
+            not isinstance(scan_limit, int)
+            or isinstance(scan_limit, bool)
+            or not 1 <= scan_limit <= MAX_PROJECT_MEMORY_ITEMS
+        ):
+            raise ValueError("Project memory scan limit must be between 1 and 2000.")
+        if (
+            not isinstance(excerpt_chars, int)
+            or isinstance(excerpt_chars, bool)
+            or not 100 <= excerpt_chars <= MAX_PROJECT_MEMORY_CHARS
+        ):
+            raise ValueError("Project memory excerpt length must be between 100 and 2000.")
+
+        terms = {
+            token
+            for token in _PROJECT_MEMORY_TOKENS.findall(query.casefold())
+            if token not in _PROJECT_MEMORY_STOPWORDS
+        }
+        if not terms:
+            return []
+
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT memory_id, memory_type, content, source_session_id,
+                       source_message_sequence, verification_status, created_at, updated_at
+                FROM project_memories
+                WHERE workspace = ?
+                ORDER BY updated_at DESC, memory_id DESC
+                LIMIT ?
+                """,
+                (workspace, scan_limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Project memory retrieval failed.") from exc
+        finally:
+            connection.close()
+
+        scored: list[tuple[int, str, dict[str, Any]]] = []
+        for row in rows:
+            memory_tokens = set(_PROJECT_MEMORY_TOKENS.findall(row["content"].casefold()))
+            score = len(terms & memory_tokens)
+            if score < 1:
+                continue
+            record = {
+                "memory_id": row["memory_id"],
+                "memory_type": row["memory_type"],
+                "content": _redact_session_text(row["content"][:excerpt_chars]),
+                "source_session_id": row["source_session_id"],
+                "source_message_sequence": int(row["source_message_sequence"]),
+                "verification_status": row["verification_status"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "match_terms": sorted(terms & memory_tokens),
+                "match_score": score,
+            }
+            scored.append((score, row["updated_at"], record))
+
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [record for _score, _updated, record in scored[:limit]]
