@@ -168,11 +168,11 @@ def test_session_preview_redaction_removes_terminal_control_characters(tmp_path)
         store,
         workspace,
         "terminal-control-session",
-        {"role": "user", "content": "Show this safely\\x1b[31m red text\\x1b[0m"},
+        {"role": "user", "content": "Show this safely\x1b[31m red text\x1b[0m"},
     )
 
     result = store.list_sessions(workspace)
 
     assert len(result) == 1
-    assert "\\x1b" not in result[0]["last_user_prompt"]
+    assert "\x1b" not in result[0]["last_user_prompt"]
     assert "red text" in result[0]["last_user_prompt"]
