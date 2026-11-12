@@ -675,7 +675,9 @@ class SQLiteSessionStore:
             "updated_at": row["updated_at"],
             "message_count": int(count_row["message_count"]),
             "last_user_prompt": (
-                latest_prompt[:preview_chars] if latest_prompt is not None else None
+                _redact_session_text(latest_prompt[:preview_chars])
+                if latest_prompt is not None
+                else None
             ),
             "preview_truncated": (
                 latest_prompt is not None and len(latest_prompt) > preview_chars
