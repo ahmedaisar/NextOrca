@@ -3,15 +3,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from nextorca import openai_compatible, provider as provider_contract, routing as routing_contract
+import nextorca.openai_compatible
+import nextorca.provider
+import nextorca.routing
 
 
-ProviderFactory = Callable[..., provider_contract.ChatProvider]
+ProviderFactory = Callable[..., nextorca.provider.ChatProvider]
 DEFAULT_PROVIDER_ADAPTER = "openai-compatible"
 
 
 class ProviderRegistry:
-    """Small registry of transport adapters that satisfy the provider_contract.ChatProvider contract."""
+    """Small registry of transport adapters that satisfy the nextorca.provider.ChatProvider contract."""
 
     def __init__(self) -> None:
         self._factories: dict[str, ProviderFactory] = {}
@@ -43,24 +45,24 @@ class ProviderRegistry:
         *,
         base_url: str | None,
         api_key: str | None = None,
-    ) -> provider_contract.ChatProvider:
+    ) -> nextorca.provider.ChatProvider:
         factory = self._factories.get(name)
         if factory is None:
             available = ", ".join(self.adapters) or "(none)"
-            raise provider_contract.ProviderError(
+            raise nextorca.provider.ProviderError(
                 f"Unknown provider adapter '{name}'. Available adapters: {available}."
             )
         if not isinstance(base_url, str) or not base_url.strip():
-            raise provider_contract.ProviderError(f"Provider adapter '{name}' requires a base URL.")
+            raise nextorca.provider.ProviderError(f"Provider adapter '{name}' requires a base URL.")
         try:
             instance = factory(base_url=base_url, api_key=api_key)
         except (ValueError, TypeError) as exc:
-            raise provider_contract.ProviderError(
+            raise nextorca.provider.ProviderError(
                 f"Provider adapter '{name}' could not be configured: {type(exc).__name__}."
             ) from exc
         if not callable(getattr(instance, "complete", None)):
-            raise provider_contract.ProviderError(
-                f"Provider adapter '{name}' did not create a provider_contract.ChatProvider-compatible instance."
+            raise nextorca.provider.ProviderError(
+                f"Provider adapter '{name}' did not create a nextorca.provider.ChatProvider-compatible instance."
             )
         return instance
 
@@ -69,7 +71,7 @@ def create_default_provider_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
     registry.register(
         DEFAULT_PROVIDER_ADAPTER,
-        lambda *, base_url, api_key=None: openai_compatible.OpenAICompatibleProvider(
+        lambda *, base_url, api_key=None: nextorca.openai_compatible.OpenAICompatibleProvider(
             base_url,
             api_key=api_key,
         ),
@@ -97,12 +99,12 @@ class RuntimeProviderConfig:
 def build_runtime_provider(
     config: RuntimeProviderConfig,
     *,
-    on_route: routing_contract.RouteHandler | None = None,
+    on_route: nextorca.routing.RouteHandler | None = None,
     registry: ProviderRegistry | None = None,
-) -> tuple[provider_contract.ChatProvider, str]:
+) -> tuple[nextorca.provider.ChatProvider, str]:
     """Construct the selected transport(s), then compose the existing router.
 
-    The router receives only provider_contract.ChatProvider instances. It has no dependency on
+    The router receives only nextorca.provider.ChatProvider instances. It has no dependency on
     provider-specific config or wire-protocol details.
     """
     active_registry = registry or create_default_provider_registry()
@@ -142,7 +144,7 @@ def build_runtime_provider(
         if config.cloud.base_url and config.route_mode in {"auto", "cloud"}
         else None
     )
-    router = routing_contract.HybridRouter(
+    router = nextorca.routing.HybridRouter(
         local_provider=local_provider,
         local_model=config.local.model if local_provider is not None else None,
         cloud_provider=cloud_provider,
