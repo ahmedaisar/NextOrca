@@ -384,8 +384,13 @@ class TerminalWorkspace:
                 self._status = "Running tool"
             elif event.type == "tool_completed":
                 self._messages.append(
-                    ("tool", f"Completed {event.data.get('tool', 'tool')} "
-                     f"({event.data.get('output_chars', 0)} chars)")
+                    (
+                        "tool",
+                        (
+                            f"Completed {event.data.get('tool', 'tool')} "
+                            f"({event.data.get('output_chars', 0)} chars)"
+                        ),
+                    )
                 )
             elif event.type == "tool_denied":
                 self._messages.append(("system", f"Denied {event.data.get('tool', 'tool')}"))
