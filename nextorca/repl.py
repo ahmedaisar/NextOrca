@@ -36,22 +36,22 @@ def _available_sessions(runtime: AgentRuntime) -> list[dict]:
 def _resume_session(runtime: AgentRuntime, selection: str) -> str:
     if runtime.session_store is None or runtime.workspace_root is None:
         raise ValueError("Session resume requires persistent sessions.")
-    sessions = _available_sessions(runtime)
-    selected = next(
-        (item for item in sessions if item["session_id"] == selection),
-        None,
-    )
-    if selected is None and selection.isdigit():
-        index = int(selection)
-        if 1 <= index <= len(sessions):
-            selected = sessions[index - 1]
-    if selected is None:
-        raise ValueError("No session matched that ID or list index.")
-
-    session_id = selected["session_id"]
-    metadata = runtime.session_store.get_session(session_id)
-    if metadata is None or metadata["workspace"] != runtime.workspace_root:
-        raise ValueError("Session is no longer available in this workspace.")
+    metadata = runtime.session_store.get_session(selection)
+    if metadata is not None and metadata["workspace"] == runtime.workspace_root:
+        session_id = selection
+    else:
+        sessions = _available_sessions(runtime)
+        selected = None
+        if selection.isdigit():
+            index = int(selection)
+            if 1 <= index <= len(sessions):
+                selected = sessions[index - 1]
+        if selected is None:
+            raise ValueError("No session matched that ID or list index.")
+        session_id = selected["session_id"]
+        metadata = runtime.session_store.get_session(session_id)
+        if metadata is None or metadata["workspace"] != runtime.workspace_root:
+            raise ValueError("Session is no longer available in this workspace.")
     runtime.session_id = session_id
     runtime.last_session_id = session_id
     return session_id
