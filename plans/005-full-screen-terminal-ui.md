@@ -51,9 +51,10 @@ No new third-party TUI framework should be selected without a short architecture
 **In scope**
 - `nextorca/cli.py` — interactive UI selection/wiring only.
 - `nextorca/repl.py` — preserve as fallback; extract shared command dispatch only if required.
-- New `nextorca/tui.py` or a small `nextorca/tui/` package (choose after architecture note).
+- `nextorca/tui.py` — full-screen prompt_toolkit view and approval broker.
+- `docs/tui-architecture.md` — record the framework comparison and runtime/UI boundary.
 - New focused UI tests under `tests/`.
-- `pyproject.toml` only if a TUI dependency is justified.
+- `pyproject.toml` for the selected TUI dependency.
 - `README.md` and `docs/ROADMAP.md` for accurate user-facing UI documentation/status.
 
 **Out of scope**
@@ -74,9 +75,9 @@ No new third-party TUI framework should be selected without a short architecture
 
 ### Step 1: Record the interface architecture decision
 
-Before choosing a dependency, document the proposed input/event/render architecture and compare at least: stdlib/ANSI terminal rendering, a maintained Python TUI framework, and a lightweight prompt-toolkit/rich-style approach. Consider resize, Windows console support, alternate screen restoration, keyboard input, terminal selection/copy, streaming output, screen-reader legibility, tests and dependency burden. Choose the smallest option that meets these needs.
+docs/tui-architecture.md records the comparison of hand-written ANSI, Rich-only rendering and prompt_toolkit. It selects prompt_toolkit 3.0.53+ because it supplies a full-screen event loop, input widgets, keyboard bindings, Unicode handling, Windows support, testable I/O abstractions and alternate-screen restoration. It also records that the runtime, provider/router, session store and approval semantics remain authoritative outside the UI.
 
-**Verify**: the architecture note names the chosen approach, records rejected options and includes an explicit statement that the runtime remains UI-agnostic; no code is changed in this step.
+**Verify**: git diff --check exits 0 and the architecture note contains all three alternatives plus the runtime-ownership and approval rules.
 
 ### Step 2: Build the smallest useful chat surface
 
