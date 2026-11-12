@@ -17,6 +17,7 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
 
 from nextorca.goals import GoalRunner
+from nextorca.repl import _memory_command
 from nextorca.routing import HybridRouter
 from nextorca.runtime import AgentRuntime
 from nextorca.tool_registry import ToolSpec
@@ -448,6 +449,13 @@ class TerminalWorkspace:
         if prompt == "/plugins":
             names = [name for name in self.runtime.tools.names if name.startswith("plugin_")]
             self._append_message("system", "\n".join(names) or "No plugin tools loaded.")
+            return
+        if prompt == "/memory" or prompt.startswith("/memory "):
+            argument = prompt[len("/memory"):].strip()
+            try:
+                self._append_message("system", _memory_command(self.runtime, argument))
+            except (OSError, ValueError, RuntimeError) as exc:
+                self._append_message("error", f"{type(exc).__name__}: {exc}")
             return
         if prompt.startswith("/route"):
             self._route_command(prompt[len("/route"):].strip())
