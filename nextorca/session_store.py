@@ -412,3 +412,241 @@ class SQLiteSessionStore:
         for provider_summary in summary["by_provider"].values():
             provider_summary["latency_ms"] = round(provider_summary["latency_ms"], 2)
         return summary
+
+
+    def list_sessions(
+        self,
+        workspace: str,
+        *,
+        limit: int = 20,
+        preview_chars: int = 160,
+    ) -> list[dict[str, Any]]:
+        """List recent sessions for one workspace without loading full transcripts."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("Session list limit must be between 1 and 100.")
+        if (
+            not isinstance(preview_chars, int)
+            or isinstance(preview_chars, bool)
+            or not 1 <= preview_chars <= 500
+        ):
+            raise ValueError("Session preview length must be between 1 and 500 characters.")
+
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT s.session_id, s.model, s.created_at, s.updated_at,
+                       COUNT(m.sequence) AS message_count
+                FROM sessions AS s
+                LEFT JOIN messages AS m ON m.session_id = s.session_id
+                WHERE s.workspace = ?
+                GROUP BY s.session_id
+                ORDER BY s.updated_at DESC, s.created_at DESC, s.session_id DESC
+                LIMIT ?
+                """,
+                (workspace, limit),
+            ).fetchall()
+
+            sessions: list[dict[str, Any]] = []
+            for row in rows:
+                latest_prompt: str | None = None
+                recent_messages = connection.execute(
+                    """
+                    SELECT message_json
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY sequence DESC
+                    LIMIT 32
+                    """,
+                    (row["session_id"],),
+                ).fetchall()
+                for message_row in recent_messages:
+                    try:
+                        message = json.loads(message_row["message_json"])
+                    except (TypeError, json.JSONDecodeError) as exc:
+                        raise SessionStoreError(
+                            "Session contains an invalid serialized message."
+                        ) from exc
+                    if (
+                        isinstance(message, dict)
+                        and message.get("role") == "user"
+                        and isinstance(message.get("content"), str)
+                    ):
+                        latest_prompt = message["content"]
+                        break
+
+                sessions.append(
+                    {
+                        "session_id": row["session_id"],
+                        "model": row["model"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "message_count": int(row["message_count"]),
+                        "last_user_prompt": (
+                            latest_prompt[:preview_chars] if latest_prompt is not None else None
+                        ),
+                        "preview_truncated": (
+                            latest_prompt is not None and len(latest_prompt) > preview_chars
+                        ),
+                    }
+                )
+            return sessions
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Workspace sessions could not be listed.") from exc
+        finally:
+            connection.close()
+
+    def search_sessions(
+        self,
+        workspace: str,
+        query: str,
+        *,
+        limit: int = 20,
+        scan_limit: int = 5_000,
+        excerpt_chars: int = 240,
+    ) -> list[dict[str, Any]]:
+        """Search bounded user-authored text in sessions belonging to one workspace."""
+        if not isinstance(query, str) or not query.strip() or len(query) > 256:
+            raise ValueError("Session search query must contain 1 to 256 characters.")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("Session search result limit must be between 1 and 100.")
+        if (
+            not isinstance(scan_limit, int)
+            or isinstance(scan_limit, bool)
+            or not 1 <= scan_limit <= 10_000
+        ):
+            raise ValueError("Session search scan limit must be between 1 and 10000.")
+        if (
+            not isinstance(excerpt_chars, int)
+            or isinstance(excerpt_chars, bool)
+            or not 40 <= excerpt_chars <= 1_000
+        ):
+            raise ValueError("Session search excerpt length must be between 40 and 1000 characters.")
+
+        needle = query.strip().casefold()
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT s.session_id, m.sequence, m.created_at, m.message_json
+                FROM sessions AS s
+                JOIN messages AS m ON m.session_id = s.session_id
+                WHERE s.workspace = ?
+                ORDER BY s.updated_at DESC, m.sequence DESC
+                LIMIT ?
+                """,
+                (workspace, scan_limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Workspace session history could not be searched.") from exc
+        finally:
+            connection.close()
+
+        matches: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                message = json.loads(row["message_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise SessionStoreError("Session contains an invalid serialized message.") from exc
+            if (
+                not isinstance(message, dict)
+                or message.get("role") != "user"
+                or not isinstance(message.get("content"), str)
+            ):
+                continue
+
+            content = message["content"]
+            match_at = content.casefold().find(needle)
+            if match_at < 0:
+                continue
+            start = max(0, match_at - excerpt_chars // 3)
+            end = min(len(content), start + excerpt_chars)
+            excerpt = content[start:end]
+            if start:
+                excerpt = "…" + excerpt
+            if end < len(content):
+                excerpt += "…"
+            matches.append(
+                {
+                    "session_id": row["session_id"],
+                    "sequence": int(row["sequence"]),
+                    "created_at": row["created_at"],
+                    "excerpt": excerpt,
+                }
+            )
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def get_session_summary(
+        self,
+        session_id: str,
+        *,
+        workspace: str,
+        preview_chars: int = 240,
+    ) -> dict[str, Any] | None:
+        """Return bounded metadata for one session only when it belongs to workspace."""
+        if (
+            not isinstance(preview_chars, int)
+            or isinstance(preview_chars, bool)
+            or not 1 <= preview_chars <= 500
+        ):
+            raise ValueError("Session preview length must be between 1 and 500 characters.")
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT session_id, workspace, model, created_at, updated_at
+                FROM sessions
+                WHERE session_id = ? AND workspace = ?
+                """,
+                (session_id, workspace),
+            ).fetchone()
+            if row is None:
+                return None
+            count_row = connection.execute(
+                "SELECT COUNT(*) AS message_count FROM messages WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            message_rows = connection.execute(
+                """
+                SELECT message_json
+                FROM messages
+                WHERE session_id = ?
+                ORDER BY sequence DESC
+                LIMIT 32
+                """,
+                (session_id,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Session summary could not be loaded.") from exc
+        finally:
+            connection.close()
+
+        latest_prompt: str | None = None
+        for message_row in message_rows:
+            try:
+                message = json.loads(message_row["message_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise SessionStoreError("Session contains an invalid serialized message.") from exc
+            if (
+                isinstance(message, dict)
+                and message.get("role") == "user"
+                and isinstance(message.get("content"), str)
+            ):
+                latest_prompt = message["content"]
+                break
+
+        return {
+            "session_id": row["session_id"],
+            "model": row["model"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "message_count": int(count_row["message_count"]),
+            "last_user_prompt": (
+                latest_prompt[:preview_chars] if latest_prompt is not None else None
+            ),
+            "preview_truncated": (
+                latest_prompt is not None and len(latest_prompt) > preview_chars
+            ),
+        }
