@@ -148,7 +148,7 @@ def test_search_sessions_caps_results_and_rejects_invalid_bounds(tmp_path):
         store.append_message(session_id, {"role": "user", "content": prompt})
 
     assert len(store.search_sessions(workspace, "needle", limit=2)) == 2
-    with pytest.raises(SessionStoreError, match="1–50"):
+    with pytest.raises(SessionStoreError, match="between 1 and 50"):
         store.search_sessions(workspace, "needle", limit=51)
     with pytest.raises(SessionStoreError, match="1–500"):
         store.search_sessions(workspace, " " * 501)
