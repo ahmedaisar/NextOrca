@@ -166,6 +166,8 @@ class TerminalWorkspace:
         self._application = self._build_application(input=input, output=output)
         self.approval.attach(self._application.invalidate)
         runtime.on_event = self._handle_event
+        if runtime.session_id:
+            self._show_session_context(runtime.session_id)
 
     @property
     def application(self) -> Application[Any]:
@@ -483,6 +485,22 @@ class TerminalWorkspace:
             )
         self._append_message("system", "\n".join(lines))
 
+    def _show_session_context(self, session_id: str) -> None:
+        store = self.runtime.session_store
+        workspace = self.runtime.workspace_root
+        if store is None or workspace is None:
+            return
+        summary = store.get_session_summary(session_id, workspace=workspace)
+        if summary is None:
+            return
+        prompt = summary.get("last_user_prompt") or "(no user prompt yet)"
+        if summary.get("preview_truncated"):
+            prompt += "…"
+        self._append_message(
+            "system",
+            f"Loaded saved session · {summary['message_count']} messages · latest prompt: {prompt}",
+        )
+
     def _resume(self, selection: str) -> None:
         if self._is_busy():
             self._set_notice("Cannot switch sessions while a turn is running.")
@@ -515,6 +533,7 @@ class TerminalWorkspace:
         self.runtime.session_id = session_id
         self.runtime.last_session_id = session_id
         self._append_message("system", f"Resuming session {session_id}.")
+        self._show_session_context(session_id)
 
     def _route_command(self, argument: str) -> None:
         provider = self.runtime.provider
@@ -636,6 +655,7 @@ class TerminalWorkspace:
         finally:
             # If the UI exits unexpectedly, any wait in the approval broker fails closed.
             self.approval.close()
+            self.runtime.on_event = self._previous_event_handler
 
 
 def run_tui(
