@@ -30,7 +30,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Provider-neutral runtime:** connect to local or hosted OpenAI-compatible APIs.
 - **Hybrid routing:** route codebase exploration to a local model and more demanding coding tasks to a cloud model, with manual local/cloud overrides.
 - **Privacy mode:** `local-only` prevents prompts and tool context from being sent to a cloud provider.
-- **Interactive terminal agent:** launch without a prompt to start a persistent conversation.
+- **Full-screen terminal workspace:** launch without a prompt for the full-screen chat UI, live tool status and approval panels; select the classic REPL with `--ui repl`.
 - **Streaming responses:** compatible providers can stream assistant text directly into the terminal.
 - **Long-session context:** compact conversation history into a structured summary without deleting the stored transcript.
 - **Coding tools:** read, search, edit files and run project commands with explicit approval.
@@ -82,7 +82,7 @@ For a local endpoint, start your preferred inference server and note its API bas
 uv run nextorca --workspace ./path/to/your-repository
 ```
 
-Type requests naturally. The agent can inspect files, edit with diff approval, run project commands after approval, and iterate on actual command output. Use `/help`, `/session`, `/sessions`, `/resume`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, `/context`, `/compact`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
+Type requests naturally. The default full-screen UI shows conversation, streaming output, tool status and approval previews. The agent can inspect files, edit with diff approval, run project commands after approval, and iterate on actual command output. Use `/help`, `/session`, `/sessions`, `/resume`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, `/context`, `/compact`, and `/exit`. Ctrl-Q exits while idle. Ctrl-C or Esc denies a pending approval; an active turn must finish before the UI exits. Select the classic line REPL with `uv run nextorca --ui repl`.
 
 ### 3. Run a one-shot prompt (optional)
 
@@ -94,7 +94,7 @@ uv run nextorca \
   "Explain the main modules and how they fit together."
 ```
 
-One-shot mode is read-only by default. Use the interactive REPL for edits and shell execution.
+One-shot mode is read-only by default. Use the interactive TUI or classic REPL for edits and shell execution.
 
 ### 4. Connect a hosted provider (optional)
 
@@ -159,14 +159,7 @@ uv run nextorca --workspace ./my-repo --session-id YOUR_SESSION_ID \
 
 uv run nextorca --workspace ./my-repo --session-stats
 uv run nextorca --workspace ./my-repo --session-id YOUR_SESSION_ID --session-stats
-
-# Discover and search saved sessions without starting a model provider
-uv run nextorca sessions list --workspace ./my-repo
-uv run nextorca sessions search "database adapter" --workspace ./my-repo
-uv run nextorca sessions show YOUR_SESSION_ID --workspace ./my-repo
 ```
-
-Inside the interactive REPL, use `/sessions` to list recent sessions for the current workspace and `/resume 1` (or an exact session ID) to continue one. Session listing and search are workspace-scoped; they return bounded user-prompt excerpts rather than system prompts or tool output.
 
 ### List and undo approved changes
 
@@ -274,6 +267,8 @@ A plugin can bundle Agent Skills and command-backed tools. Plugin tools are regi
 
 See [the plugin guide](docs/plugins.md) and [the example plugin](examples/plugins/git-helper).
 
+The full-screen terminal interface uses [prompt_toolkit](https://python-prompt-toolkit.readthedocs.io/en/stable/) for input, layout, keyboard handling and terminal restoration. The UI is a presentation layer over the existing runtime and approval policy; the classic REPL remains available with `--ui repl`. See the [TUI architecture decision](docs/tui-architecture.md).
+
 ## Configuration
 
 The single-provider mode accepts these options:
@@ -283,13 +278,16 @@ The single-provider mode accepts these options:
 | `--base-url` | `NEXTORCA_BASE_URL` | OpenAI-compatible API base URL |
 | `--model` | `NEXTORCA_MODEL` | Model identifier |
 | `--api-key` | `NEXTORCA_API_KEY` | Provider API key |
+| `--provider-adapter` | `NEXTORCA_PROVIDER_ADAPTER` | Single-provider transport (currently `openai-compatible`) |
+| `--local-provider-adapter` | `NEXTORCA_LOCAL_PROVIDER_ADAPTER` | Local transport adapter |
+| `--cloud-provider-adapter` | `NEXTORCA_CLOUD_PROVIDER_ADAPTER` | Cloud transport adapter |
 | `--workspace` | — | Workspace root (defaults to current directory) |
 | `--max-turns` | — | Maximum agent turns |
 | `--session-db` | `NEXTORCA_SESSION_DB` | SQLite session database path |
 | `--session-id` | `NEXTORCA_SESSION_ID` | Resume an existing session |
 | `--verbose` | — | Emit structured runtime and routing events to stderr |
 
-Hybrid mode additionally supports `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_LOCAL_API_KEY`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, and `NEXTORCA_CLOUD_API_KEY`. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback.
+Hybrid mode additionally supports `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_LOCAL_API_KEY`, `NEXTORCA_LOCAL_PROVIDER_ADAPTER`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_CLOUD_API_KEY`, and `NEXTORCA_CLOUD_PROVIDER_ADAPTER`. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The provider registry currently ships only the `openai-compatible` adapter; unknown adapters fail explicitly. See the [provider adapter contract](docs/provider-adapter-contract.md).
 
 Useful permission and maintenance options:
 
