@@ -152,3 +152,21 @@ def test_search_sessions_caps_results_and_rejects_invalid_bounds(tmp_path):
         store.search_sessions(workspace, "needle", limit=51)
     with pytest.raises(SessionStoreError, match="1–500"):
         store.search_sessions(workspace, " " * 501)
+
+
+
+def test_session_previews_and_search_redact_common_secrets_and_terminal_controls(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "sessions.db")
+    workspace = str(tmp_path)
+    session_id = store.create_session(workspace=workspace, model="mock")
+    prompt = "Review api_key=very-secret-value and sk-12345678901234567890\x1b[31m now"
+    store.append_message(session_id, {"role": "user", "content": prompt})
+
+    listed = store.list_sessions(workspace)
+    searched = store.search_sessions(workspace, "api_key")
+
+    for text in (listed[0]["preview"], searched[0]["excerpt"]):
+        assert "very-secret-value" not in text
+        assert "sk-12345678901234567890" not in text
+        assert "\x1b" not in text
+        assert "[REDACTED]" in text
