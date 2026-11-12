@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.provider import ChatProvider, ProviderError
-from nextorca.routing import HybridRouter, PrivacyMode, RouteHandler, RouteMode
+from nextorca.routing import HybridRouter, RouteHandler
 
 
 ProviderFactory = Callable[..., ChatProvider]
