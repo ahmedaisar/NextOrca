@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution state**: BLOCKED for a native adapter pending explicit maintainer target selection; registry/factory implementation is in [PR #30](https://github.com/ahmedaisar/NextOrca/pull/30).
+- **Execution state**: BLOCKED for a native adapter pending explicit maintainer target selection; registry/factory implementation is in [PR #29](https://github.com/ahmedaisar/NextOrca/pull/30).
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
