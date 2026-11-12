@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import uuid
 from pathlib import Path
@@ -10,6 +11,16 @@ from typing import Any
 
 class SessionStoreError(RuntimeError):
     """A persistent session could not be created, loaded or updated."""
+
+
+_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)\\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|secret|password|passwd|authorization)"
+    r"\\s*[:=]\\s*([^\\s,;]{4,})"
+)
+_SECRET_TOKEN = re.compile(
+    r"\\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\\b"
+)
 
 
 class SQLiteSessionStore:
@@ -421,7 +432,7 @@ class SQLiteSessionStore:
 
     @staticmethod
     def _session_overview_from_row(row: sqlite3.Row) -> dict[str, Any]:
-        preview = row["preview"] or ""
+        preview = SQLiteSessionStore._redact_session_text(row["preview"] or "")
         if len(preview) > 160:
             preview = preview[:157] + "..."
         return {
@@ -471,6 +482,13 @@ class SQLiteSessionStore:
         finally:
             connection.close()
         return [self._session_overview_from_row(row) for row in rows]
+    @staticmethod
+    def _redact_session_text(value: str) -> str:
+        """Keep previews readable while masking common credentials and terminal controls."""
+        printable = "".join(character if character.isprintable() else " " for character in value)
+        printable = _SECRET_ASSIGNMENT.sub(r"\\1=[REDACTED]", printable)
+        return _SECRET_TOKEN.sub("[REDACTED]", printable)
+
 
     def get_session_overview(
         self,
@@ -555,7 +573,7 @@ class SQLiteSessionStore:
 
         results: list[dict[str, Any]] = []
         for row in rows:
-            excerpt = row["excerpt"] or ""
+            excerpt = self._redact_session_text(row["excerpt"] or "")
             match_index = int(row["match_index"])
             if match_index > 81:
                 excerpt = "..." + excerpt
