@@ -31,6 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nextorca",
         description="NextOrca terminal coding agent. Start an interactive session or pass a prompt.",
+        epilog=(
+            "Session history: nextorca sessions list | nextorca sessions search <query> "
+            "| nextorca sessions show <session-id>."
+        ),
     )
     parser.add_argument("prompt", nargs="?", help="Task or question for the coding agent.")
     parser.add_argument(
@@ -155,9 +159,74 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+
+def _sessions_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="nextorca sessions",
+        description="Inspect workspace-scoped NextOrca sessions without starting a model.",
+    )
+    subparsers = parser.add_subparsers(dest="action", required=True)
+    defaults = argparse.ArgumentParser(add_help=False)
+    defaults.add_argument("--workspace", type=Path, default=Path.cwd())
+    defaults.add_argument(
+        "--session-db",
+        type=Path,
+        default=Path(
+            os.environ.get(
+                "NEXTORCA_SESSION_DB",
+                str(Path.home() / ".nextorca" / "sessions.sqlite3"),
+            )
+        ),
+    )
+
+    list_parser = subparsers.add_parser("list", parents=[defaults])
+    list_parser.add_argument("--limit", type=int, default=20)
+
+    search_parser = subparsers.add_parser("search", parents=[defaults])
+    search_parser.add_argument("query")
+    search_parser.add_argument("--limit", type=int, default=20)
+
+    show_parser = subparsers.add_parser("show", parents=[defaults])
+    show_parser.add_argument("session_id")
+    return parser
+
+
+def _run_sessions_command(argv: Sequence[str]) -> int:
+    args = _sessions_parser().parse_args(list(argv))
+    try:
+        workspace = args.workspace.expanduser().resolve(strict=True)
+        if not workspace.is_dir():
+            raise ValueError("Workspace must be an existing directory.")
+        store = SQLiteSessionStore(args.session_db)
+        workspace_key = str(workspace)
+
+        if args.action == "list":
+            result = store.list_sessions(workspace_key, limit=args.limit)
+            print(json.dumps({"sessions": result}, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "search":
+            result = store.search_sessions(workspace_key, args.query, limit=args.limit)
+            print(json.dumps({"matches": result}, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "show":
+            result = store.get_session_summary(args.session_id, workspace=workspace_key)
+            if result is None:
+                print("Session not found in this workspace.", file=sys.stderr)
+                return 1
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        raise ValueError("Unknown sessions command.")
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"nextorca sessions: {exc}", file=sys.stderr)
+        return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    provided_argv = list(sys.argv[1:] if argv is None else argv)
+    if provided_argv and provided_argv[0] == "sessions":
+        return _run_sessions_command(provided_argv[1:])
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(provided_argv)
     interactive = args.prompt is None
     if interactive and not sys.stdin.isatty():
         parser.error("interactive mode requires a terminal; pass a prompt for one-shot mode")

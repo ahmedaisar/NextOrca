@@ -2,7 +2,7 @@
 
 **Project:** NextOrca  
 **Baseline:** main @ 8d1c38f160f45bc070fd15c0284ab2be0e3ae7a9  
-**Updated:** 2026-11-08  
+**Updated:** 2026-11-12  
 **Scope:** a personal terminal coding agent for the maintainer's own projects. Commercial-readiness requirements are intentionally out of scope.
 
 ## Product definition
@@ -13,7 +13,7 @@ NextOrca is an AI coding agent that lives in the terminal. It should inspect a r
 
 - Interactive terminal REPL with persistent sessions and slash commands.
 - Workspace Read/Glob/Grep, diff-approved Write/Edit and approved shell execution.
-- SQLite session history, checkpoints, metrics and resumable session IDs.
+- SQLite session history, workspace-scoped session listing/search, one-command resume, checkpoints and local metrics.
 - Standard Agent Skills discovery and on-demand loading.
 - Declarative local plugins bundling skills and approval-gated argv command tools.
 - MCP stdio integrations with per-call approval and Linux Bubblewrap isolation.
@@ -40,7 +40,6 @@ These are optional improvements, not commercial launch gates:
 
 1. A full-screen TUI after the REPL is stable and pleasant.
 2. Native provider adapters beyond OpenAI Chat Completions compatibility.
-3. Better session browser/search and one-command resume.
 4. More ergonomic skill/plugin management commands and an optional community catalog.
 5. Optional bounded subagents for independent parallel work.
 6. Better cancellation and process-tree cleanup for long-running shell commands.

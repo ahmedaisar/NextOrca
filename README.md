@@ -82,7 +82,7 @@ For a local endpoint, start your preferred inference server and note its API bas
 uv run nextorca --workspace ./path/to/your-repository
 ```
 
-Type requests naturally. The agent can inspect files, edit with diff approval, run project commands after approval, and iterate on actual command output. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, `/context`, `/compact`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
+Type requests naturally. The agent can inspect files, edit with diff approval, run project commands after approval, and iterate on actual command output. Use `/help`, `/session`, `/sessions`, `/resume`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, `/context`, `/compact`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
 
 ### 3. Run a one-shot prompt (optional)
 
@@ -159,7 +159,14 @@ uv run nextorca --workspace ./my-repo --session-id YOUR_SESSION_ID \
 
 uv run nextorca --workspace ./my-repo --session-stats
 uv run nextorca --workspace ./my-repo --session-id YOUR_SESSION_ID --session-stats
+
+# Discover and search saved sessions without starting a model provider
+uv run nextorca sessions list --workspace ./my-repo
+uv run nextorca sessions search "database adapter" --workspace ./my-repo
+uv run nextorca sessions show YOUR_SESSION_ID --workspace ./my-repo
 ```
+
+Inside the interactive REPL, use `/sessions` to list recent sessions for the current workspace and `/resume 1` (or an exact session ID) to continue one. Session listing and search are workspace-scoped; they return bounded user-prompt excerpts rather than system prompts or tool output.
 
 ### List and undo approved changes
 
