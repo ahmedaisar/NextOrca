@@ -27,6 +27,22 @@ _SESSION_PRIVATE_KEY = re.compile(
 )
 
 
+_PROJECT_MEMORY_TYPES = frozenset({"decision", "command", "fact", "convention"})
+_PROJECT_MEMORY_TOKENS = re.compile(r"[\\w./:+-]{2,}", re.UNICODE)
+_PROJECT_MEMORY_STOPWORDS = frozenset(
+    {
+        "about", "after", "also", "and", "are", "because", "before", "being",
+        "can", "could", "does", "from", "have", "into", "just", "more", "most",
+        "must", "need", "not", "only", "our", "please", "should", "that", "the",
+        "their", "them", "then", "there", "these", "this", "those", "through",
+        "using", "very", "was", "were", "what", "when", "where", "which", "will",
+        "with", "would", "your",
+    }
+)
+MAX_PROJECT_MEMORY_CHARS = 2_000
+MAX_PROJECT_MEMORY_ITEMS = 2_000
+
+
 def _redact_session_text(value: str) -> str:
     """Mask common credential forms before session text is shown in terminal previews."""
     value = _SESSION_PRIVATE_KEY.sub("[REDACTED PRIVATE KEY]", value)
@@ -697,11 +713,15 @@ class SQLiteSessionStore:
         source_message_sequence: int,
     ) -> dict[str, Any]:
         """Store an operator-confirmed project memory linked to a user message."""
-        if not isinstance(memory_type, str) or memory_type not in _PROJECT_MEMORY_TYPES:
+        if not isinstance(memory_type, str):
+            raise TypeError("Memory type must be a string.")
+        if memory_type not in _PROJECT_MEMORY_TYPES:
             raise ValueError(
                 "Memory type must be one of: decision, command, fact, convention."
             )
-        if not isinstance(content, str) or not content.strip():
+        if not isinstance(content, str):
+            raise TypeError("Memory content must be a string.")
+        if not content.strip():
             raise ValueError("Memory content must not be empty.")
         normalized = content.strip()
         if len(normalized) > MAX_PROJECT_MEMORY_CHARS:
@@ -710,11 +730,9 @@ class SQLiteSessionStore:
             )
         if _redact_session_text(normalized) != normalized:
             raise ValueError("Memory content appears to contain a credential; remove it before saving.")
-        if (
-            not isinstance(source_message_sequence, int)
-            or isinstance(source_message_sequence, bool)
-            or source_message_sequence < 1
-        ):
+        if not isinstance(source_message_sequence, int) or isinstance(source_message_sequence, bool):
+            raise TypeError("Source message sequence must be an integer.")
+        if source_message_sequence < 1:
             raise ValueError("Source message sequence must be a positive integer.")
         if not isinstance(source_session_id, str) or not source_session_id.strip():
             raise ValueError("A source session ID is required.")
@@ -876,7 +894,7 @@ class SQLiteSessionStore:
 
     def set_project_memory_enabled(self, workspace: str, enabled: bool) -> None:
         if not isinstance(enabled, bool):
-            raise ValueError("Project memory enabled state must be a boolean.")
+            raise TypeError("Project memory enabled state must be a boolean.")
         connection = self._connect()
         try:
             connection.execute(
