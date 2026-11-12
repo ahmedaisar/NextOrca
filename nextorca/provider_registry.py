@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import importlib
 
-from nextorca import openai_compatible, provider, routing  # noqa: I001
+openai_compatible = importlib.import_module("nextorca.openai_compatible")
+provider = importlib.import_module("nextorca.provider")
+routing = importlib.import_module("nextorca.routing")
 
 
 ProviderFactory = Callable[..., provider.ChatProvider]
