@@ -61,3 +61,13 @@ def test_resume_rechecks_workspace_before_switching():
         _resume_session(runtime, "session-one")
 
     assert runtime.session_id is None
+
+
+def test_resume_exact_id_is_not_limited_to_recent_session_page():
+    runtime = _runtime()
+    runtime.session_store.sessions.extend(
+        {"session_id": f"older-{index}", "workspace": "/repo"}
+        for index in range(25)
+    )
+
+    assert _resume_session(runtime, "older-24") == "older-24"
