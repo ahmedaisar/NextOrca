@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import sys
 
 from nextorca.goals import GoalRunner
@@ -59,6 +60,90 @@ def _resume_session(runtime: AgentRuntime, selection: str) -> str:
     runtime.session_id = session_id
     runtime.last_session_id = session_id
     return session_id
+
+
+
+def _memory_command(runtime: AgentRuntime, argument: str) -> str:
+    if runtime.session_store is None or runtime.workspace_root is None:
+        raise ValueError("Project memory requires persistent sessions.")
+    try:
+        parts = shlex.split(argument)
+    except ValueError as exc:
+        raise ValueError("Invalid memory command quoting.") from exc
+    if not parts:
+        return "Usage: /memory list|status|on|off|search <query>|show <id>|forget <id>|add <type> <session-id> <message-sequence> <text>"
+
+    store = runtime.session_store
+    workspace = runtime.workspace_root
+    action = parts[0]
+    if action == "status":
+        enabled = store.project_memory_enabled(workspace)
+        count = len(store.list_project_memories(workspace, limit=200))
+        return f"Project memory is {'ON' if enabled else 'OFF'}; {count} records in the recent list."
+    if action == "on":
+        store.set_project_memory_enabled(workspace, True)
+        return "Project memory enabled for this workspace."
+    if action == "off":
+        store.set_project_memory_enabled(workspace, False)
+        return "Project memory disabled for this workspace."
+    if action == "list":
+        records = store.list_project_memories(workspace, limit=100)
+        if not records:
+            return "No project memory records."
+        return "\\n".join(
+            f"{item['memory_id']} · {item['memory_type']} · "
+            f"{item['source_session_id']}#{item['source_message_sequence']} · {item['content']}"
+            for item in records
+        )
+    if action in {"search", "preview"}:
+        query = " ".join(parts[1:]).strip()
+        if not query:
+            raise ValueError(f"Usage: /memory {action} <query>")
+        selected = store.search_project_memories(workspace, query, limit=4)
+        if not selected:
+            return "No matching project memories selected."
+        return "\\n".join(
+            f"{item['memory_id']} · {item['memory_type']} · "
+            f"{item['source_session_id']}#{item['source_message_sequence']} · "
+            f"matched {', '.join(item['match_terms'])}: {item['content']}"
+            for item in selected
+        )
+    if action == "show":
+        if len(parts) != 2:
+            raise ValueError("Usage: /memory show <memory-id>")
+        result = store.get_project_memory(parts[1], workspace=workspace)
+        if result is None:
+            raise ValueError("Memory not found in this workspace.")
+        return (
+            f"{result['memory_id']} · {result['memory_type']} · "
+            f"{result['source_session_id']}#{result['source_message_sequence']}\n"
+            f"{result['content']}"
+        )
+    if action == "forget":
+        if len(parts) != 2:
+            raise ValueError("Usage: /memory forget <memory-id>")
+        if not store.forget_project_memory(parts[1], workspace=workspace):
+            raise ValueError("Memory not found in this workspace.")
+        return f"Forgot project memory {parts[1]}."
+    if action == "add":
+        if len(parts) < 5:
+            raise ValueError(
+                "Usage: /memory add <decision|command|fact|convention> "
+                "<source-session-id> <message-sequence> <text>"
+            )
+        try:
+            sequence = int(parts[3])
+        except ValueError as exc:
+            raise ValueError("Source message sequence must be a positive integer.") from exc
+        result = store.add_project_memory(
+            workspace=workspace,
+            memory_type=parts[1],
+            source_session_id=parts[2],
+            source_message_sequence=sequence,
+            content=" ".join(parts[4:]),
+        )
+        return f"Saved operator-confirmed project memory {result['memory_id']}."
+    raise ValueError("Unknown memory command. Use /memory list|status|on|off|search|show|add|forget.")
 
 
 def run_repl(runtime: AgentRuntime) -> None:
@@ -209,6 +294,13 @@ def run_repl(runtime: AgentRuntime) -> None:
         if prompt == "/plugins":
             names = [name for name in runtime.tools.names if name.startswith("plugin_")]
             print("\n".join(names) or "No plugin tools loaded.")
+            continue
+        if prompt == "/memory" or prompt.startswith("/memory "):
+            argument = prompt[len("/memory"):].strip()
+            try:
+                print(_memory_command(runtime, argument))
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"\\nnextorca memory: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if prompt == "/goal" or prompt.startswith("/goal "):
             runner = GoalRunner(runtime)
