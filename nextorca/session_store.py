@@ -412,3 +412,161 @@ class SQLiteSessionStore:
         for provider_summary in summary["by_provider"].values():
             provider_summary["latency_ms"] = round(provider_summary["latency_ms"], 2)
         return summary
+
+    @staticmethod
+    def _validate_session_limit(limit: int, *, maximum: int) -> int:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= maximum:
+            raise SessionStoreError(f"Session result limit must be between 1 and {maximum}.")
+        return limit
+
+    @staticmethod
+    def _session_overview_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        preview = row["preview"] or ""
+        if len(preview) > 160:
+            preview = preview[:157] + "..."
+        return {
+            "session_id": row["session_id"],
+            "workspace": row["workspace"],
+            "model": row["model"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "message_count": int(row["message_count"]),
+            "preview": preview,
+        }
+
+    def list_sessions(self, workspace: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """List recent sessions and bounded latest-user-prompt previews for one workspace."""
+        self._validate_session_limit(limit, maximum=100)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT
+                    s.session_id,
+                    s.workspace,
+                    s.model,
+                    s.created_at,
+                    s.updated_at,
+                    COUNT(m.sequence) AS message_count,
+                    (
+                        SELECT json_extract(latest.message_json, '$.content')
+                        FROM messages AS latest
+                        WHERE latest.session_id = s.session_id
+                          AND json_extract(latest.message_json, '$.role') = 'user'
+                          AND json_type(latest.message_json, '$.content') = 'text'
+                        ORDER BY latest.sequence DESC
+                        LIMIT 1
+                    ) AS preview
+                FROM sessions AS s
+                LEFT JOIN messages AS m ON m.session_id = s.session_id
+                WHERE s.workspace = ?
+                GROUP BY s.session_id
+                ORDER BY s.updated_at DESC, s.rowid DESC
+                LIMIT ?
+                """,
+                (workspace, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Workspace sessions could not be listed.") from exc
+        finally:
+            connection.close()
+        return [self._session_overview_from_row(row) for row in rows]
+
+    def get_session_overview(
+        self,
+        session_id: str,
+        *,
+        workspace: str,
+    ) -> dict[str, Any] | None:
+        """Return bounded session metadata only when it belongs to the requested workspace."""
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT
+                    s.session_id,
+                    s.workspace,
+                    s.model,
+                    s.created_at,
+                    s.updated_at,
+                    COUNT(m.sequence) AS message_count,
+                    (
+                        SELECT json_extract(latest.message_json, '$.content')
+                        FROM messages AS latest
+                        WHERE latest.session_id = s.session_id
+                          AND json_extract(latest.message_json, '$.role') = 'user'
+                          AND json_type(latest.message_json, '$.content') = 'text'
+                        ORDER BY latest.sequence DESC
+                        LIMIT 1
+                    ) AS preview
+                FROM sessions AS s
+                LEFT JOIN messages AS m ON m.session_id = s.session_id
+                WHERE s.session_id = ? AND s.workspace = ?
+                GROUP BY s.session_id
+                """,
+                (session_id, workspace),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Session summary could not be loaded.") from exc
+        finally:
+            connection.close()
+        return self._session_overview_from_row(row) if row is not None else None
+
+    def search_sessions(
+        self,
+        workspace: str,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search literal user-message text within one workspace, returning bounded excerpts."""
+        self._validate_session_limit(limit, maximum=50)
+        if not isinstance(query, str) or not query.strip() or len(query) > 500:
+            raise SessionStoreError("Session search query must contain 1–500 characters.")
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT
+                    m.session_id,
+                    m.sequence,
+                    m.created_at,
+                    instr(json_extract(m.message_json, '$.content'), ?) AS match_index,
+                    substr(
+                        json_extract(m.message_json, '$.content'),
+                        max(1, instr(json_extract(m.message_json, '$.content'), ?) - 80),
+                        200
+                    ) AS excerpt
+                FROM messages AS m
+                INNER JOIN sessions AS s ON s.session_id = m.session_id
+                WHERE s.workspace = ?
+                  AND json_extract(m.message_json, '$.role') = 'user'
+                  AND json_type(m.message_json, '$.content') = 'text'
+                  AND instr(json_extract(m.message_json, '$.content'), ?) > 0
+                ORDER BY m.created_at DESC, m.rowid DESC
+                LIMIT ?
+                """,
+                (query, query, workspace, query, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise SessionStoreError("Session history search failed.") from exc
+        finally:
+            connection.close()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            excerpt = row["excerpt"] or ""
+            match_index = int(row["match_index"])
+            if match_index > 81:
+                excerpt = "..." + excerpt
+            if len(excerpt) >= 200:
+                excerpt += "..."
+            results.append(
+                {
+                    "session_id": row["session_id"],
+                    "sequence": int(row["sequence"]),
+                    "created_at": row["created_at"],
+                    "excerpt": excerpt,
+                }
+            )
+        return results
