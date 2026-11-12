@@ -61,7 +61,7 @@ def test_read_enforces_limit_even_when_metadata_reports_smaller_size(tmp_path, m
 
 def test_read_and_grep_preserve_utf8_replacement_behavior(tmp_path):
     target = tmp_path / "invalid.txt"
-    target.write_bytes(b"\\xffabc")
+    target.write_bytes(b"\xffabc")
     workspace = Workspace(tmp_path, max_read_bytes=4)
 
     assert workspace.read("invalid.txt") == "�abc"
@@ -70,7 +70,7 @@ def test_read_and_grep_preserve_utf8_replacement_behavior(tmp_path):
 
 def test_mutation_read_preserves_strict_utf8_validation(tmp_path):
     target = tmp_path / "invalid.txt"
-    target.write_bytes(b"\\xffabc")
+    target.write_bytes(b"\xffabc")
     workspace = Workspace(tmp_path, max_write_bytes=4)
 
     with pytest.raises(ToolExecutionError, match="Only UTF-8 text files"):
