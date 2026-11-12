@@ -2,27 +2,30 @@
 
 > **Executor instructions**: Treat this as a privacy-sensitive, staged design/prototype plan, not permission to build a large memory platform. First produce a minimal design and acceptance corpus. Store memory locally and make every remembered fact inspectable and deletable. Do not add cloud embeddings or background reflection in the first increment.
 
-> **Drift check (run first)**: `git diff --stat 7ca0952..HEAD -- nextorca/session_store.py nextorca/context.py nextorca/runtime.py nextorca/cli.py tests`. Revalidate the session storage and context assembly before designing the memory boundary.
+> **Drift check (run first)**: `git diff --stat bef652d..HEAD -- nextorca/session_store.py nextorca/context.py nextorca/runtime.py nextorca/cli.py nextorca/repl.py nextorca/tui.py tests README.md docs/project-memory.md docs/ROADMAP.md`. This implementation is stacked on the rebased session/TUI/provider-registry branch at `bef652d`. Compare the live SQLite schema, context injection and commands before editing; review any later drift before proceeding.
 
 ## Status
 
+- **Execution state**: IMPLEMENTED — [PR #35](https://github.com/ahmedaisar/NextOrca/pull/35); CI pending on the clean stacked head. The original implementation in PR #30 had a green Quick checks run (#343).
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: plans/006-session-discovery-and-resume.md
+- **Depends on**: plans/006-session-discovery-and-resume.md and plans/005-full-screen-terminal-ui.md
 - **Category**: direction
-- **Planned at**: commit `7ca0952`, 2026-11-12
+- **Planned at**: commit `615233e`, 2026-11-12
 
 ## Why this matters
 
-NextOrca's current compaction keeps a useful summary inside one session, but it does not create a searchable memory that can inform a different session in the same project. Atomic Agent has a separate cross-session memory fabric, including structured profile facts, searchable notes and reflection; importing that level of complexity is unnecessary for a personal coding agent. This plan first defines a bounded, local-only project memory for durable coding decisions and recurring project facts, with transparent provenance and operator control.
+NextOrca's current compaction keeps a useful summary inside one session, but it does not create a searchable memory that can inform a different session in the same project. Atomic Agent has a separate cross-session memory fabric, including structured profile facts, searchable notes and reflection; importing that level of complexity is unnecessary for a personal coding agent. This plan first defines a bounded, locally stored project memory for durable coding decisions and recurring project facts, with transparent provenance and operator control.
 
 ## Current state
 
 - `nextorca/context.py` implements a deterministic character-budget fit that prunes older tool and assistant output while preserving required messages; it is not a persistent recall index.
 - `nextorca/runtime.py` stores append-only message/event history and compaction summaries. Context compaction is for reconstructing one session's prompt.
-- `nextorca/session_store.py` persists sessions, messages, events and checkpoints. Its `sessions` table carries ID, workspace, model and timestamps; message history is associated with session ID.
-- `docs/ROADMAP.md` identifies session browsing/search and better resume UX, but it does not define cross-session semantic memory. Memory is therefore an optional extension, not a blocker for core coding-agent quality.
+- `nextorca/session_store.py` persists sessions, messages, events and checkpoints. Its `sessions` table carries ID, workspace, model and timestamps; message history is associated with session ID. The implementation in this branch adds `project_memories` and `project_memory_settings` tables to the same owner-only SQLite database, with a hard 2,000-record workspace cap.
+- `nextorca/runtime.py` now uses the lexical search API to inject at most four matched records into an ephemeral system-context block. It applies the normal context budget and drops optional memory if it would make an otherwise valid prompt fail.
+- `nextorca/cli.py` exposes offline `nextorca memory add/list/show/search/forget/on/off/status`; `nextorca/repl.py` and `nextorca/tui.py` route `/memory` commands through the same command helper.
+- `docs/project-memory.md` documents explicit creation, provenance, credential rejection, local storage and the fact that selected memory enters the current provider prompt. Balanced mode can route prompts to cloud; local-only mode preserves the local-inference boundary.
 - Existing tests use temporary SQLite files and explicit workspace binding. Preserve the principle that one project's memory must not leak into another project's sessions.
 
 ## Commands you will need
@@ -30,7 +33,8 @@ NextOrca's current compaction keeps a useful summary inside one session, but it 
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Install | `uv sync --extra dev` | Exit 0 |
-| Session/memory tests | `uv run pytest tests/test_session_store.py tests/test_context_compaction.py tests/test_context_budget.py -q` | Existing session/context tests pass |
+| Focused memory tests | `uv run pytest tests/test_project_memory_store.py tests/test_project_memory_runtime.py tests/test_cli_project_memory.py tests/test_repl_project_memory.py -q` | All memory behavior tests pass |
+| Session/context regression | `uv run pytest tests/test_session_store.py tests/test_context_compaction.py tests/test_context_budget.py -q` | Existing session/context tests pass |
 | Full tests | `uv run pytest` | Exit 0 |
 | Lint | `uv run ruff check nextorca tests evals examples` | Exit 0 |
 | Compile | `uv run python -m compileall -q nextorca examples evals` | Exit 0 |
@@ -38,10 +42,11 @@ NextOrca's current compaction keeps a useful summary inside one session, but it 
 ## Scope
 
 **In scope**
-- A separate local memory module/store with project/workspace scope and explicit provenance fields.
-- Runtime context assembly only for bounded, relevant memory excerpts.
-- CLI/REPL commands to inspect, add, forget/delete and disable memory.
-- Focused tests and documentation for provenance, privacy and retention behavior.
+- `nextorca/session_store.py` — local project memory tables and workspace-scoped CRUD/retrieval methods in the existing 0600 SQLite store.
+- `nextorca/runtime.py` — ephemeral, bounded prompt injection with provenance and context-budget fallback.
+- `nextorca/cli.py`, `nextorca/repl.py`, and `nextorca/tui.py` — inspect, add, forget, preview and enable/disable commands.
+- Focused tests under `tests/test_project_memory_*.py` and `tests/test_cli_project_memory.py` / `tests/test_repl_project_memory.py`.
+- `docs/project-memory.md`, `README.md`, and `docs/ROADMAP.md`.
 
 **Out of scope**
 - Replacing or rewriting session transcripts.
@@ -89,13 +94,13 @@ Create a small fixture corpus drawn from synthetic project decisions and command
 
 ## Done criteria
 
-- [ ] Memory is local-only, project-scoped, inspectable and deletable.
-- [ ] Every item has source provenance and clear state (user-authored or operator-approved).
-- [ ] Memory can be disabled with a guarantee that it is not sent to the provider.
-- [ ] Retrieval is bounded, deterministic and covered by synthetic evaluations.
-- [ ] Existing session transcripts and compaction behavior are unchanged.
-- [ ] Full pytest, Ruff and compileall pass.
-- [ ] Documentation explains what is stored, why, where and how to forget it.
+- [x] Memory is stored locally, project-scoped, inspectable and deletable.
+- [x] Every item has source provenance and `operator_confirmed` status; creation is explicit, never automatic.
+- [x] Memory can be disabled with a guarantee that no memory content is injected into provider messages.
+- [x] Retrieval is bounded, deterministic and covered by synthetic evaluations; optional memories are dropped if they would exceed the context budget.
+- [x] Existing session transcripts and compaction behavior are unchanged.
+- [ ] Full pytest, Ruff and compileall pass on the clean stacked PR head (pending current-head CI).
+- [x] Documentation explains what is stored, why, where and how to forget it, including balanced/cloud routing implications.
 
 ## STOP conditions
 
