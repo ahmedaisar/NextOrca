@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Execute this as a focused UI project. Preserve the existing REPL as a supported fallback and keep the agent runtime, provider routing, SQLite store, workspace tools and approval policy as the sources of truth. Do not copy Atomic Agent's TUI architecture wholesale. Run each verification command before continuing. Update the plan index when the implementation is complete.
 
-> **Drift check (run first)**: `git diff --stat 7ca0952..HEAD -- nextorca/cli.py nextorca/repl.py nextorca/runtime.py nextorca/types.py pyproject.toml tests`. If any in-scope path changed, compare this plan's current-state notes to the live code and revise the plan before implementation.
+> **Drift check (run first)**: `git diff --stat d80c604..HEAD -- nextorca/cli.py nextorca/repl.py nextorca/runtime.py nextorca/types.py pyproject.toml tests`. This plan is refreshed after Plan 006 (PR #26) added session discovery APIs and REPL/CLI session commands. If any in-scope path changed again after the baseline, compare this plan's current-state notes to the live code and revise or stop before editing.
 
 ## Status
 
@@ -20,8 +20,9 @@ The line-oriented REPL is functional but makes it difficult to inspect conversat
 ## Current state
 
 - `nextorca/cli.py` owns argument parsing, provider selection, workspace/tool assembly, runtime construction and currently imports `run_repl(runtime)` only for interactive sessions.
-- `nextorca/repl.py` implements the current UI using `input()` and `print()`. Its help text exposes `/help`, `/session`, `/new`, `/tools`, `/route`, `/privacy`, `/context`, `/compact`, `/mcp`, `/plugins`, `/goal` and `/exit`.
+- `nextorca/repl.py` implements the current UI using `input()` and `print()`. Its help text exposes `/help`, `/session`, `/sessions`, `/resume`, `/new`, `/tools`, `/route`, `/privacy`, `/context`, `/compact`, `/mcp`, `/plugins`, `/goal` and `/exit`.
 - `nextorca/runtime.py` owns provider/tool execution, permission checks, context budget, session persistence and event delivery. Keep it UI-independent.
+- `nextorca/session_store.py` exposes bounded, workspace-scoped `list_sessions`, `search_sessions` and `get_session_summary` methods. The CLI exposes provider-free `nextorca sessions list|search|show`; consume these stable interfaces rather than issuing SQL from UI views.
 - `nextorca/types.py` defines agent event and stream types; use those event contracts rather than adding UI callbacks deep inside tool implementations.
 - `nextorca/permissions.py` implements the existing interactive approval policy. Approval must remain a runtime permission decision, not a TUI-only affordance.
 - `pyproject.toml` currently has only `httpx` as a runtime dependency; development dependencies are pytest and Ruff. A terminal UI dependency has not been selected.
