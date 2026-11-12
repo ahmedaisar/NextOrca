@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+# ruff: isort: off
 import json
 import os
+import re
 import sqlite3
 import uuid
 from pathlib import Path
-from re import compile as re_compile
 from typing import Any
+# ruff: isort: on
 
 
-_SESSION_SECRET_ASSIGNMENT = re_compile(
+_SESSION_SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|"
     r"token|secret|password|passwd|authorization|private[_-]?key)"
     r"""(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|(?:Bearer|Basic)\s+[^\s,;]+|[^\s,;]+)"""
