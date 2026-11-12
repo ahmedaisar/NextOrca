@@ -150,6 +150,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show local provider, latency and token metrics for this workspace/session.",
     )
+    parser.add_argument(
+        "--ui",
+        choices=["auto", "tui", "repl"],
+        default=os.environ.get("NEXTORCA_UI", "auto"),
+        help="Interactive interface: full-screen TUI (auto/tui) or the classic REPL.",
+    )
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument(
         "--verbose",
@@ -230,6 +236,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     interactive = args.prompt is None
     if interactive and not sys.stdin.isatty():
         parser.error("interactive mode requires a terminal; pass a prompt for one-shot mode")
+
+    use_tui = False
+    tui_approval_policy = None
+    tui_runner = None
+    if interactive and args.ui in {"auto", "tui"}:
+        try:
+            from nextorca.tui import TerminalApprovalPolicy, run_tui
+
+            tui_approval_policy = TerminalApprovalPolicy()
+            tui_runner = run_tui
+            use_tui = True
+        except ImportError as exc:
+            if args.ui == "tui":
+                parser.error(
+                    "The full-screen TUI is unavailable. Install the package dependencies "
+                    "with uv sync, or use --ui repl."
+                )
+            print(
+                f"nextorca: full-screen UI unavailable ({type(exc).__name__}); falling back to REPL.",
+                file=sys.stderr,
+            )
+
     mcp_clients: list[MCPStdioClient] = []
     try:
         workspace = Workspace(args.workspace)
@@ -264,7 +292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             print(detail, file=sys.stderr)
 
-        route_logger = log_route if args.verbose or interactive else None
+        route_logger = log_route if (args.verbose or interactive) and not use_tui else None
 
         if args.route_mode == "single":
             if args.privacy_mode == "local-only":
@@ -355,7 +383,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ValueError("Configured MCP servers exposed no usable tools.")
 
         policy = (
-            InteractiveApprovalPolicy()
+            tui_approval_policy
+            if use_tui
+            else InteractiveApprovalPolicy()
             if interactive or edits_enabled or mcp_enabled
             else ReadOnlyPermissionPolicy()
         )
@@ -411,15 +441,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             tools=tools,
             permission_policy=policy,
             config=AgentConfig(max_turns=args.max_turns, system_prompt=system_prompt),
-            on_event=handle_event if args.verbose or interactive else None,
+            on_event=handle_event if (args.verbose or interactive) and not use_tui else None,
             session_store=session_store,
             workspace_root=workspace.root,
             session_id=args.session_id,
         )
         if interactive:
-            from nextorca.repl import run_repl
+            if use_tui and tui_runner is not None and tui_approval_policy is not None:
+                tui_runner(runtime, tui_approval_policy)
+            else:
+                from nextorca.repl import run_repl
 
-            run_repl(runtime)
+                run_repl(runtime)
             return 0
 
         answer = runtime.run(args.prompt)
