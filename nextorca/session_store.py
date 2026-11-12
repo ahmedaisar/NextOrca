@@ -15,7 +15,7 @@ class SessionStoreError(RuntimeError):
 
 _SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|secret|password|passwd|authorization)"
-    r"\s*[:=]\s*(?:bearer\s+)?("[^"]*"|'[^']*'|[^\s,;]+)"
+    r"\s*[:=]\s*(?:bearer\s+)?(\"[^\"]*\"|'[^']*'|[^\s,;]+)"
 )
 _SECRET_TOKEN = re.compile(
     r"\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|"
