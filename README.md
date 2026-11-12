@@ -30,7 +30,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - **Provider-neutral runtime:** connect to local or hosted OpenAI-compatible APIs.
 - **Hybrid routing:** route codebase exploration to a local model and more demanding coding tasks to a cloud model, with manual local/cloud overrides.
 - **Privacy mode:** `local-only` prevents prompts and tool context from being sent to a cloud provider.
-- **Interactive terminal agent:** launch without a prompt to start a persistent conversation.
+- **Full-screen terminal workspace:** launch without a prompt for the full-screen chat UI, live tool status and approval panels; select the classic REPL with `--ui repl`.
 - **Streaming responses:** compatible providers can stream assistant text directly into the terminal.
 - **Long-session context:** compact conversation history into a structured summary without deleting the stored transcript.
 - **Coding tools:** read, search, edit files and run project commands with explicit approval.
@@ -82,7 +82,7 @@ For a local endpoint, start your preferred inference server and note its API bas
 uv run nextorca --workspace ./path/to/your-repository
 ```
 
-Type requests naturally. The agent can inspect files, edit with diff approval, run project commands after approval, and iterate on actual command output. Use `/help`, `/session`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, `/context`, `/compact`, and `/exit`. Ctrl-C interrupts a request; Ctrl-D exits.
+Type requests naturally. The default full-screen UI shows conversation, streaming output, tool status and approval previews. The agent can inspect files, edit with diff approval, run project commands after approval, and iterate on actual command output. Use `/help`, `/session`, `/sessions`, `/resume`, `/new`, `/tools`, `/mcp`, `/plugins`, `/route`, `/privacy`, `/goal`, `/context`, `/compact`, and `/exit`. Ctrl-Q exits while idle. Ctrl-C or Esc denies a pending approval; an active turn must finish before the UI exits. Select the classic line REPL with `uv run nextorca --ui repl`.
 
 ### 3. Run a one-shot prompt (optional)
 
@@ -266,6 +266,8 @@ Plugins are local folders containing a `plugin.json` manifest. NextOrca discover
 A plugin can bundle Agent Skills and command-backed tools. Plugin tools are registered with the normal tool registry and require explicit approval for every invocation. Commands use argv arrays, not a shell string, and run with your user permissions in the current project directory.
 
 See [the plugin guide](docs/plugins.md) and [the example plugin](examples/plugins/git-helper).
+
+The full-screen terminal interface uses [prompt_toolkit](https://python-prompt-toolkit.readthedocs.io/en/stable/) for input, layout, keyboard handling and terminal restoration. The UI is a presentation layer over the existing runtime and approval policy; the classic REPL remains available with `--ui repl`. See the [TUI architecture decision](docs/tui-architecture.md).
 
 ## Configuration
 
