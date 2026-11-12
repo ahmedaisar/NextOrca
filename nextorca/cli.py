@@ -30,7 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
         )
     parser = argparse.ArgumentParser(
         prog="nextorca",
-        description="NextOrca terminal coding agent. Start an interactive session or pass a prompt.",
+        description=(
+            "NextOrca terminal coding agent. Start an interactive session or pass a prompt. "
+            "Use 'nextorca sessions --help' to inspect saved session history."
+        ),
     )
     parser.add_argument("prompt", nargs="?", help="Task or question for the coding agent.")
     parser.add_argument(
@@ -155,7 +158,77 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _sessions_command(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="nextorca sessions",
+        description="Inspect persistent sessions for the current workspace without contacting a model provider.",
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    def add_store_options(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument(
+            "--workspace",
+            type=Path,
+            default=Path.cwd(),
+            help="Workspace whose sessions should be inspected (default: current directory).",
+        )
+        command_parser.add_argument(
+            "--session-db",
+            type=Path,
+            default=Path(
+                os.environ.get(
+                    "NEXTORCA_SESSION_DB",
+                    str(Path.home() / ".nextorca" / "sessions.sqlite3"),
+                )
+            ),
+            help="SQLite session database path.",
+        )
+
+    list_parser = commands.add_parser("list", help="List recent sessions for this workspace.")
+    add_store_options(list_parser)
+    list_parser.add_argument("--limit", type=int, default=20, help="Maximum rows (1–100).")
+
+    search_parser = commands.add_parser("search", help="Search user prompts in this workspace.")
+    add_store_options(search_parser)
+    search_parser.add_argument("query", help="Literal text to find in user messages.")
+    search_parser.add_argument("--limit", type=int, default=20, help="Maximum rows (1–50).")
+
+    show_parser = commands.add_parser("show", help="Show bounded metadata for one session.")
+    add_store_options(show_parser)
+    show_parser.add_argument("session_id", help="Exact session ID.")
+
+    args = parser.parse_args(list(argv))
+    try:
+        workspace = Workspace(args.workspace)
+        store = SQLiteSessionStore(args.session_db)
+        workspace_root = str(workspace.root)
+
+        if args.command == "list":
+            results = store.list_sessions(workspace_root, limit=args.limit)
+            print(json.dumps(results, ensure_ascii=False, indent=2))
+            return 0
+
+        if args.command == "search":
+            results = store.search_sessions(workspace_root, args.query, limit=args.limit)
+            print(json.dumps(results, ensure_ascii=False, indent=2))
+            return 0
+
+        result = store.get_session_overview(args.session_id, workspace=workspace_root)
+        if result is None:
+            print("Session not found in this workspace.", file=sys.stderr)
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"nextorca sessions: {exc}", file=sys.stderr)
+        return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    if arguments and arguments[0] == "sessions":
+        return _sessions_command(arguments[1:])
+
     parser = build_parser()
     args = parser.parse_args(argv)
     interactive = args.prompt is None
