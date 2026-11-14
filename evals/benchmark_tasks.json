@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "corpus_version": "1.0.0",
+  "tasks": [
+    {
+      "id": "bug-fix",
+      "category": "bug_fix",
+      "description": "Correct an off-by-one error in a total calculation.",
+      "fixture": "fixtures/bug-fix",
+      "prompt": "Inspect the fixture and fix calculate_total so it returns the sum of all items without adding an extra unit. Keep the change minimal.",
+      "allowed_tools": ["read_file", "list_files", "write_file", "run_verification"],
+      "verification_argv": ["python", "-m", "pytest", "-q"],
+      "timeout_seconds": 60,
+      "max_turns": 6,
+      "max_tool_calls": 12,
+      "expected_baseline_exit_code": 1
+    },
+    {
+      "id": "feature-addition",
+      "category": "feature",
+      "description": "Add a deterministic slugify helper.",
+      "fixture": "fixtures/feature-addition",
+      "prompt": "Add a slugify(value) helper in text_utils.py. It should trim whitespace, lowercase text, replace runs of non-alphanumeric characters with one hyphen, and remove leading or trailing hyphens.",
+      "allowed_tools": ["read_file", "list_files", "write_file", "run_verification"],
+      "verification_argv": ["python", "-m", "pytest", "-q"],
+      "timeout_seconds": 60,
+      "max_turns": 6,
+      "max_tool_calls": 12,
+      "expected_baseline_exit_code": 1
+    },
+    {
+      "id": "refactor",
+      "category": "refactor",
+      "description": "Extract duplicated label normalization into a shared helper.",
+      "fixture": "fixtures/refactor",
+      "prompt": "Refactor formatting.py to extract the duplicated label normalization into normalize_label(value), and make both public formatters call that helper without changing their output.",
+      "allowed_tools": ["read_file", "list_files", "write_file", "run_verification"],
+      "verification_argv": ["python", "-m", "pytest", "-q"],
+      "timeout_seconds": 60,
+      "max_turns": 6,
+      "max_tool_calls": 12,
+      "expected_baseline_exit_code": 1
+    },
+    {
+      "id": "test-repair",
+      "category": "test_repair",
+      "description": "Repair an incorrect expected value in a regression test.",
+      "fixture": "fixtures/test-repair",
+      "prompt": "The implementation is correct but its regression test has an incorrect expected value. Repair the test assertion; do not change math_utils.py.",
+      "allowed_tools": ["read_file", "list_files", "write_file", "run_verification"],
+      "verification_argv": ["python", "-m", "pytest", "-q"],
+      "timeout_seconds": 60,
+      "max_turns": 6,
+      "max_tool_calls": 12,
+      "expected_baseline_exit_code": 1
+    },
+    {
+      "id": "read-only-explanation",
+      "category": "explanation",
+      "description": "Explain a small project from its README without modifying files.",
+      "fixture": "fixtures/read-only-explanation",
+      "prompt": "Read the project README and explain what the example package does. Do not modify any files.",
+      "allowed_tools": ["read_file", "list_files", "run_verification"],
+      "verification_argv": ["python", "-m", "pytest", "-q"],
+      "timeout_seconds": 45,
+      "max_turns": 4,
+      "max_tool_calls": 6,
+      "expected_baseline_exit_code": 0,
+      "read_only": true
+    },
+    {
+      "id": "security-review",
+      "category": "security",
+      "description": "Replace unsafe eval-based parsing with literal_eval.",
+      "fixture": "fixtures/security-review",
+      "prompt": "Review config.py for unsafe dynamic evaluation. Replace eval with ast.literal_eval while preserving parsing of Python literal values.",
+      "allowed_tools": ["read_file", "list_files", "write_file", "run_verification"],
+      "verification_argv": ["python", "-m", "pytest", "-q"],
+      "timeout_seconds": 60,
+      "max_turns": 6,
+      "max_tool_calls": 12,
+      "expected_baseline_exit_code": 1
+    }
+  ]
+}

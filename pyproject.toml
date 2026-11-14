@@ -21,7 +21,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["nextorca*"]
+include = ["nextorca*", "evals*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -30,3 +30,12 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+
+[tool.setuptools.package-data]
+evals = [
+    "benchmark_tasks.json",
+    "fixtures/*/*.py",
+    "fixtures/*/*.md",
+    "fixtures/*/tests/*.py",
+]

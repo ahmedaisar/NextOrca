@@ -36,6 +36,10 @@ jobs:
         run: uv run python -m compileall -q nextorca examples evals
       - name: CLI smoke test
         run: uv run nextorca --help
+      - name: Benchmark manifest and offline smoke
+        run: |
+          uv run python -c "from pathlib import Path; from evals.benchmark import load_manifest; version, tasks = load_manifest(Path('evals/benchmark_tasks.json')); assert len(tasks) >= 6"
+          uv run python -m evals.run_benchmark --smoke --output-dir "$RUNNER_TEMP/nextorca-eval-smoke"
       - name: Unit and integration tests (sandbox-dependent tests skip when unavailable)
         run: uv run pytest
 
@@ -79,5 +83,7 @@ jobs:
         run: uv run nextorca --help
       - name: Routing evaluation
         run: uv run python evals/evaluate_routing.py --fail-under 0.95
-      - name: Full test suite
+      - name: Full test suite and fixture matrix
+        env:
+          NEXTORCA_FULL_BENCHMARK_TESTS: "1"
         run: uv run pytest

@@ -16,6 +16,7 @@ Run `nextorca` inside a project to start an interactive coding session. Ask it t
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Examples](#examples)
+- [Coding-task benchmark](docs/benchmarking.md)
 - [Skills](#skills)
 - [Plugins](#plugins)
 - [Context management](#context-management)
