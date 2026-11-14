@@ -51,3 +51,15 @@ print(json.dumps({
     assert result.tool_calls[0].name == "Read"
     assert result.tool_calls[0].arguments == {"file_path": "README.md"}
     assert result.usage == {"input_tokens": 20, "output_tokens": 6}
+
+
+def test_claude_code_cli_rejects_missing_structured_output(tmp_path: Path):
+    script = tmp_path / "plain_response.py"
+    script.write_text("print('{\\\"result\\\":\\\"plain text\\\"}')\n", encoding="utf-8")
+    provider = ClaudeCodeCLIProvider(command=[sys.executable, str(script)])
+
+    import pytest
+    from nextorca.provider import ProviderError
+
+    with pytest.raises(ProviderError, match="did not return schema-validated"):
+        provider.complete(model="claude-test", messages=[{"role": "user", "content": "hi"}], tools=[])
