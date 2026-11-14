@@ -8,7 +8,6 @@ import httpx
 from nextorca.provider import ProviderError, ProviderUnavailableError
 from nextorca.types import AssistantTurn, ToolCall
 
-
 ANTHROPIC_API_VERSION = "2023-06-01"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 DEFAULT_MAX_TOKENS = 8192
