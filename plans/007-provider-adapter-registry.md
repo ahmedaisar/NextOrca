@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution state**: IN PROGRESS; Anthropic PR #43, Claude Code CLI PR #44 and Codex CLI PR #45 are in progress. Gemini API is queued as a separate PR.
+- **Execution state**: IN PROGRESS; Anthropic PR #43, Claude Code CLI PR #44, Codex CLI PR #45 and Gemini API PR #46 are in progress.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -80,7 +80,7 @@ Introduce a small configuration-to-provider factory. It should support current s
 1. Anthropic Messages API (native HTTP): normalize system/messages, tool schemas, tool-use blocks, usage and errors.
 2. Claude Code CLI (subscription-backed): use schema-validated JSON output, disable built-in tools/MCP/session persistence, run outside the workspace, and return normalized tool proposals to NextOrca.
 3. OpenAI Codex CLI (subscription-backed): use output-schema, disable workspace-capable features, run in a temporary directory with a read-only sandbox, and return structured tool proposals to NextOrca.
-4. Gemini API (native HTTP): normalize messages, function calls, usage and provider errors.
+4. Gemini API (native HTTP): normalize system instructions, message/function-response history, function declarations, function calls, usage and provider errors.
 
 Use HTTPX for native APIs and a bounded subprocess wrapper for CLI transports. Keep process cancellation and stderr/stdout separation explicit. A CLI that cannot safely satisfy `ChatProvider` must be exposed through a separate execution backend rather than falsely registered as a chat-completion adapter.
 
