@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution state**: IN PROGRESS; maintainer selected Anthropic API, Claude Code CLI, OpenAI Codex CLI and Gemini API on 2026-11-14. Registry/factory implementation is merged; native adapters are delivered as separate PRs. First adapter: Anthropic Messages API.
+- **Execution state**: IN PROGRESS; Anthropic PR #43 is open and Claude Code CLI PR #44 is in progress. OpenAI Codex CLI and Gemini API are queued as separate PRs.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -78,7 +78,7 @@ Introduce a small configuration-to-provider factory. It should support current s
 ### Step 3: Implement the four selected adapters as separate PRs
 
 1. Anthropic Messages API (native HTTP): normalize system/messages, tool schemas, tool-use blocks, usage and errors.
-2. Claude Code CLI (subscription-backed): implement only after proving a machine-readable request/response contract that returns normalized tool calls without bypassing NextOrca permissions.
+2. Claude Code CLI (subscription-backed): use schema-validated JSON output, disable built-in tools/MCP/session persistence, run outside the workspace, and return normalized tool proposals to NextOrca.
 3. OpenAI Codex CLI (subscription-backed): apply the same process, cancellation, timeout, output parsing and permission-boundary requirements.
 4. Gemini API (native HTTP): normalize messages, function calls, usage and provider errors.
 

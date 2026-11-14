@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from nextorca import anthropic, openai_compatible, provider, routing
+from nextorca import anthropic, claude_code_cli, openai_compatible, provider, routing
 
 ProviderFactory = Callable[..., provider.ChatProvider]
 DEFAULT_PROVIDER_ADAPTER = "openai-compatible"
@@ -89,6 +90,14 @@ def create_default_provider_registry() -> ProviderRegistry:
             base_url,
             api_key=api_key,
         ),
+    )
+    registry.register(
+        "claude-code-cli",
+        lambda *, base_url=None, api_key=None: claude_code_cli.ClaudeCodeCLIProvider(
+            command=os.environ.get("NEXTORCA_CLAUDE_COMMAND", "claude"),
+        ),
+        requires_base_url=False,
+        supports_local_only=False,
     )
     registry.register(
         "anthropic",
