@@ -4,7 +4,14 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from nextorca import anthropic, claude_code_cli, codex_cli, openai_compatible, provider, routing
+from nextorca import (
+    anthropic,
+    claude_code_cli,
+    codex_cli,
+    openai_compatible,
+    provider,
+    routing,
+)
 
 ProviderFactory = Callable[..., provider.ChatProvider]
 DEFAULT_PROVIDER_ADAPTER = "openai-compatible"
