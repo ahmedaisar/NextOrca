@@ -12,7 +12,6 @@ from uuid import uuid4
 from nextorca.provider import ProviderError, ProviderUnavailableError
 from nextorca.types import AssistantTurn, ToolCall
 
-
 STRUCTURED_TURN_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
