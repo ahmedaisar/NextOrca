@@ -2,7 +2,7 @@
 
 > **Executor instructions**: First inspect current provider and router contracts. This plan extends supported model transports without changing the agent loop. The maintainer selected four targets on 2026-11-14: Anthropic Messages API, Claude Code CLI, OpenAI Codex CLI, and Gemini API. Implement them as four focused PRs, not one large change. Never claim tool/stream compatibility that the transport does not provide. CLI adapters must preserve NextOrca permission checks and tool execution boundaries; do not delegate workspace access to a provider CLI behind the runtime.
 
-> **Drift check (run first)**: `git diff --stat 6a29cc0..HEAD -- nextorca/provider.py nextorca/openai_compatible.py nextorca/routing.py nextorca/cli.py nextorca/types.py nextorca/provider_registry.py pyproject.toml tests`. This implementation is based on the rebased full-screen UI branch at `6a29cc0`; compare live files before editing if they change again.
+> **Drift check (run first)**: `git diff --stat 26b601c..HEAD -- nextorca/provider.py nextorca/openai_compatible.py nextorca/routing.py nextorca/cli.py nextorca/types.py nextorca/provider_registry.py pyproject.toml tests`. The registry/factory work is already merged at the current main baseline; compare live files before editing if they change again.
 
 ## Status
 
@@ -44,14 +44,14 @@ NextOrca already has a clean `ChatProvider` protocol and optional streaming prot
 - `nextorca/provider.py` — stable provider construction/transport contract if needed.
 - `nextorca/provider_registry.py` — explicit adapter registry and runtime provider factory.
 - `nextorca/cli.py` — provider selection/configuration only.
-- One native adapter module and focused tests, after target provider selection.
+- Four focused transport adapters and their tests, delivered in separate PRs: Anthropic Messages API, Claude Code CLI, OpenAI Codex CLI and Gemini API.
 - `tests/test_openai_compatible.py`, `tests/test_hybrid_routing.py` and new adapter/factory tests only where required.
 - `README.md`, `docs/routing.md` and `docs/ROADMAP.md` to list supported protocols and limitations.
 
 **Out of scope**
 - Rewriting `AgentRuntime`, `HybridRouter`, session storage or tool schemas.
-- Adding more than one new provider adapter in this plan.
-- Copying Atomic Agent's Claude/Codex subscription CLI adapters without confirming that the operator wants those CLIs and accepts their lifecycle/usage constraints.
+- Combining multiple provider transports into one implementation PR.
+- Implementing CLI transports in a way that bypasses NextOrca tool permissions, approval gates, cancellation or process-lifecycle controls.
 - Model marketplace, billing, cloud proxy service, API key vault or remote configuration sync.
 - Changing local-only privacy guarantees or allowing silent provider fallback across privacy boundaries.
 
@@ -71,7 +71,7 @@ Introduce a small configuration-to-provider factory. It should support current s
 
 ### Step 2: Define the target-adapter compatibility checklist
 
-`docs/provider-adapter-contract.md` records the current normalized provider contract, the single supported adapter, and the checklist for the first native adapter. Do not declare a new provider supported until a target is selected and the checklist is validated against its official API or CLI documentation.
+`docs/provider-adapter-contract.md` records the normalized provider contract, currently registered adapters, and the compatibility checklist for the selected transports. Do not declare a new provider supported until its protocol and safety boundaries are validated against official API or CLI documentation.
 
 **Verify**: the contract lists required tests for authentication, messages, tools, streaming, errors, usage, privacy/routing, lifecycle and terms, and accurately lists every registered adapter.
 
