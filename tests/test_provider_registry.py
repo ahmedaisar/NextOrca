@@ -6,6 +6,7 @@ import pytest
 
 from nextorca.anthropic import AnthropicMessagesProvider
 from nextorca.claude_code_cli import ClaudeCodeCLIProvider
+from nextorca.codex_cli import CodexCLIProvider
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.provider import ProviderError
 from nextorca.provider_registry import (
@@ -66,7 +67,7 @@ def _stub_registry() -> tuple[ProviderRegistry, list[dict[str, Any]]]:
 def test_default_registry_exposes_tested_adapters_and_keeps_openai_default():
     registry = create_default_provider_registry()
 
-    assert registry.adapters == ("anthropic", "claude-code-cli", DEFAULT_PROVIDER_ADAPTER)
+    assert registry.adapters == ("anthropic", "claude-code-cli", "codex-cli", DEFAULT_PROVIDER_ADAPTER)
     provider = registry.create(
         DEFAULT_PROVIDER_ADAPTER,
         base_url="https://api.example/v1",
@@ -246,3 +247,12 @@ def test_local_route_rejects_anthropic_as_a_local_provider():
 
     with pytest.raises(ValueError, match="cannot be configured as a local provider"):
         build_runtime_provider(config)
+
+
+def test_codex_cli_provider_is_registered_without_a_base_url():
+    registry = create_default_provider_registry()
+    provider = registry.create("codex-cli", base_url=None)
+
+    assert isinstance(provider, CodexCLIProvider)
+    assert registry.requires_base_url("codex-cli") is False
+    assert registry.supports_local_only("codex-cli") is False
