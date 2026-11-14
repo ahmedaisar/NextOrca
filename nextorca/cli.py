@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="NextOrca terminal coding agent. Start an interactive session or pass a prompt.",
         epilog=(
             "Session history: nextorca sessions list | nextorca sessions search <query> "
-            "| nextorca sessions show <session-id>."
+            "| nextorca sessions show <session-id>. Project memory: nextorca memory --help."
         ),
     )
     parser.add_argument("prompt", nargs="?", help="Task or question for the coding agent.")
@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cloud-provider-adapter",
         default=os.environ.get("NEXTORCA_CLOUD_PROVIDER_ADAPTER", DEFAULT_PROVIDER_ADAPTER),
-        help="Cloud transport adapter in hybrid routing.",
+        help="Cloud transport adapter for hybrid routing.",
     )
     parser.add_argument(
         "--local-base-url",
@@ -246,10 +246,114 @@ def _run_sessions_command(argv: Sequence[str]) -> int:
         return 1
 
 
+
+def _memory_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="nextorca memory",
+        description="Manage explicit, workspace-scoped project memory.",
+    )
+    subparsers = parser.add_subparsers(dest="action", required=True)
+    defaults = argparse.ArgumentParser(add_help=False)
+    defaults.add_argument("--workspace", type=Path, default=Path.cwd())
+    defaults.add_argument(
+        "--session-db",
+        type=Path,
+        default=Path(
+            os.environ.get(
+                "NEXTORCA_SESSION_DB",
+                str(Path.home() / ".nextorca" / "sessions.sqlite3"),
+            )
+        ),
+    )
+
+    subparsers.add_parser("list", parents=[defaults]).add_argument("--limit", type=int, default=100)
+    subparsers.add_parser("status", parents=[defaults])
+    subparsers.add_parser("on", parents=[defaults])
+    subparsers.add_parser("off", parents=[defaults])
+
+    search_parser = subparsers.add_parser("search", parents=[defaults])
+    search_parser.add_argument("query")
+    search_parser.add_argument("--limit", type=int, default=4)
+
+    show_parser = subparsers.add_parser("show", parents=[defaults])
+    show_parser.add_argument("memory_id")
+
+    forget_parser = subparsers.add_parser("forget", parents=[defaults])
+    forget_parser.add_argument("memory_id")
+
+    add_parser = subparsers.add_parser("add", parents=[defaults])
+    add_parser.add_argument("text")
+    add_parser.add_argument("--type", choices=["decision", "command", "fact", "convention"], required=True)
+    add_parser.add_argument("--source-session", required=True)
+    add_parser.add_argument("--source-message", type=int, required=True)
+    return parser
+
+
+def _run_memory_command(argv: Sequence[str]) -> int:
+    args = _memory_parser().parse_args(list(argv))
+    try:
+        workspace = args.workspace.expanduser().resolve(strict=True)
+        if not workspace.is_dir():
+            raise ValueError("Workspace must be an existing directory.")
+        store = SQLiteSessionStore(args.session_db)
+        workspace_key = str(workspace)
+
+        if args.action == "status":
+            enabled = store.project_memory_enabled(workspace_key)
+            count = len(store.list_project_memories(workspace_key, limit=200))
+            print(json.dumps({"enabled": enabled, "records_in_recent_list": count}, indent=2))
+            return 0
+        if args.action == "on":
+            store.set_project_memory_enabled(workspace_key, True)
+            print("Project memory enabled for this workspace.")
+            return 0
+        if args.action == "off":
+            store.set_project_memory_enabled(workspace_key, False)
+            print("Project memory disabled for this workspace.")
+            return 0
+        if args.action == "list":
+            result = store.list_project_memories(workspace_key, limit=args.limit)
+            print(json.dumps({"memories": result}, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "search":
+            result = store.search_project_memories(workspace_key, args.query, limit=args.limit)
+            print(json.dumps({"selected_memories": result}, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "show":
+            result = store.get_project_memory(args.memory_id, workspace=workspace_key)
+            if result is None:
+                print("Memory not found in this workspace.", file=sys.stderr)
+                return 1
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "forget":
+            if not store.forget_project_memory(args.memory_id, workspace=workspace_key):
+                print("Memory not found in this workspace.", file=sys.stderr)
+                return 1
+            print(f"Forgot project memory {args.memory_id}.", file=sys.stderr)
+            return 0
+        if args.action == "add":
+            result = store.add_project_memory(
+                workspace=workspace_key,
+                memory_type=args.type,
+                content=args.text,
+                source_session_id=args.source_session,
+                source_message_sequence=args.source_message,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        raise ValueError("Unknown memory command.")
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"nextorca memory: {exc}", file=sys.stderr)
+        return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     provided_argv = list(sys.argv[1:] if argv is None else argv)
     if provided_argv and provided_argv[0] == "sessions":
         return _run_sessions_command(provided_argv[1:])
+    if provided_argv and provided_argv[0] == "memory":
+        return _run_memory_command(provided_argv[1:])
     parser = build_parser()
     args = parser.parse_args(provided_argv)
     interactive = args.prompt is None
@@ -317,18 +421,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             RuntimeProviderConfig(
                 route_mode=args.route_mode,
                 privacy_mode=args.privacy_mode,
-                single=ProviderEndpoint(args.provider_adapter, args.base_url, args.model, args.api_key),
+                single=ProviderEndpoint(
+                    adapter=args.provider_adapter,
+                    base_url=args.base_url,
+                    model=args.model,
+                    api_key=args.api_key,
+                ),
                 local=ProviderEndpoint(
-                    args.local_provider_adapter,
-                    args.local_base_url,
-                    args.local_model,
-                    args.local_api_key,
+                    adapter=args.local_provider_adapter,
+                    base_url=args.local_base_url,
+                    model=args.local_model,
+                    api_key=args.local_api_key,
                 ),
                 cloud=ProviderEndpoint(
-                    args.cloud_provider_adapter,
-                    args.cloud_base_url,
-                    args.cloud_model,
-                    args.cloud_api_key,
+                    adapter=args.cloud_provider_adapter,
+                    base_url=args.cloud_base_url,
+                    model=args.cloud_model,
+                    api_key=args.cloud_api_key,
                 ),
             ),
             on_route=route_logger,

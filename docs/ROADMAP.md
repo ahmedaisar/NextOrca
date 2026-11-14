@@ -11,9 +11,9 @@ NextOrca is an AI coding agent that lives in the terminal. It should inspect a r
 
 ## Shipped foundation
 
-- Interactive terminal REPL with persistent sessions and slash commands.
+- Full-screen terminal workspace with selectable line-oriented REPL fallback, persistent sessions and slash commands.
 - Workspace Read/Glob/Grep, diff-approved Write/Edit and approved shell execution.
-- SQLite session history, workspace-scoped session listing/search, one-command resume, checkpoints and local metrics.
+- SQLite session history, checkpoints, metrics, resumable session IDs, and explicitly curated project memory with source provenance.
 - Standard Agent Skills discovery and on-demand loading.
 - Declarative local plugins bundling skills and approval-gated argv command tools.
 - MCP stdio integrations with per-call approval and Linux Bubblewrap isolation.
@@ -32,19 +32,20 @@ NextOrca is an AI coding agent that lives in the terminal. It should inspect a r
 | 4 | MCP terminal UX and goal verification/review | Complete |
 | 5 | Provider streaming and context compaction | Complete |
 | 6 | Seamless local/cloud orchestration | Complete |
-| 7 | Product docs, examples, cleanup and end-to-end validation | Complete with this PR |
+| 7 | Product docs, examples, cleanup and end-to-end validation | Complete |
+| 8 | Full-screen terminal UI with REPL fallback and session navigation | Complete |
+| 9 | Bounded, locally stored project memory with explicit operator controls | Complete with this PR |
 
 ## Remaining personal-project backlog
 
 These are optional improvements, not commercial launch gates:
 
-1. A full-screen TUI after the REPL is stable and pleasant.
-2. Native provider adapters beyond OpenAI Chat Completions compatibility.
-4. More ergonomic skill/plugin management commands and an optional community catalog.
-5. Optional bounded subagents for independent parallel work.
-6. Better cancellation and process-tree cleanup for long-running shell commands.
-7. More platform coverage for MCP isolation; keep fail-closed behavior where no sandbox exists.
-8. Repeatable real-repository task benchmarks for comparing local/cloud routing and models.
+1. Native provider adapters beyond OpenAI Chat Completions compatibility.
+2. More ergonomic skill/plugin management commands and an optional community catalog.
+3. Optional bounded subagents for independent parallel work.
+4. Better cancellation and process-tree cleanup for long-running shell commands.
+5. More platform coverage for MCP isolation; keep fail-closed behavior where no sandbox exists.
+6. Repeatable real-repository task benchmarks for comparing local/cloud routing and models.
 
 ## Safety defaults
 
