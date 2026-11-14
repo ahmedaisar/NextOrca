@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from nextorca import openai_compatible, provider, routing
 
-
 ProviderFactory = Callable[..., provider.ChatProvider]
 DEFAULT_PROVIDER_ADAPTER = "openai-compatible"
 
