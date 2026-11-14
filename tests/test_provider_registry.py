@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from nextorca.anthropic import AnthropicMessagesProvider
+from nextorca.claude_code_cli import ClaudeCodeCLIProvider
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.provider import ProviderError
 from nextorca.provider_registry import (
@@ -65,7 +66,7 @@ def _stub_registry() -> tuple[ProviderRegistry, list[dict[str, Any]]]:
 def test_default_registry_exposes_tested_adapters_and_keeps_openai_default():
     registry = create_default_provider_registry()
 
-    assert registry.adapters == ("anthropic", DEFAULT_PROVIDER_ADAPTER)
+    assert registry.adapters == ("anthropic", "claude-code-cli", DEFAULT_PROVIDER_ADAPTER)
     provider = registry.create(
         DEFAULT_PROVIDER_ADAPTER,
         base_url="https://api.example/v1",
@@ -230,6 +231,14 @@ def test_local_route_does_not_validate_an_unselected_cloud_adapter():
     assert model == "hybrid"
     assert provider.cloud_provider is None
     assert [item["base_url"] for item in created] == ["http://127.0.0.1:8080/v1"]
+
+
+def test_claude_code_cli_provider_is_registered_without_a_base_url():
+    registry = create_default_provider_registry()
+    provider = registry.create("claude-code-cli", base_url=None)
+
+    assert isinstance(provider, ClaudeCodeCLIProvider)
+    assert registry.requires_base_url("claude-code-cli") is False
 
 
 def test_local_route_rejects_anthropic_as_a_local_provider():
