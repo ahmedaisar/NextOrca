@@ -15,7 +15,6 @@ from nextorca.cli_provider import (
 from nextorca.provider import ProviderError
 from nextorca.types import AssistantTurn
 
-
 CLAUDE_SYSTEM_PROMPT = (
     "You are a text-only model adapter for NextOrca. Do not use tools or access the filesystem. "
     "Follow the system instructions included in the request data. Return a structured response "
