@@ -3,7 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from nextorca.claude_code_cli import ClaudeCodeCLIProvider
+from nextorca.provider import ProviderError
 
 
 def test_claude_code_cli_uses_no_tools_and_parses_structured_output(tmp_path: Path):
@@ -57,9 +60,6 @@ def test_claude_code_cli_rejects_missing_structured_output(tmp_path: Path):
     script = tmp_path / "plain_response.py"
     script.write_text("print('{\\\"result\\\":\\\"plain text\\\"}')\n", encoding="utf-8")
     provider = ClaudeCodeCLIProvider(command=[sys.executable, str(script)])
-
-    import pytest
-    from nextorca.provider import ProviderError
 
     with pytest.raises(ProviderError, match="did not return schema-validated"):
         provider.complete(model="claude-test", messages=[{"role": "user", "content": "hi"}], tools=[])
