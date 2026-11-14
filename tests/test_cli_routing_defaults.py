@@ -72,7 +72,6 @@ def test_provider_adapter_cli_flags_override_environment(monkeypatch):
     assert args.cloud_provider_adapter == "cli-cloud"
 
 
-
 def test_native_provider_api_key_is_not_applied_to_other_adapters(monkeypatch):
     monkeypatch.delenv("NEXTORCA_API_KEY", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
