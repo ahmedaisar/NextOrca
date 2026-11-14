@@ -15,6 +15,7 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._factories: dict[str, ProviderFactory] = {}
         self._requires_base_url: dict[str, bool] = {}
+        self._supports_local_only: dict[str, bool] = {}
 
     @property
     def adapters(self) -> tuple[str, ...]:
@@ -27,6 +28,7 @@ class ProviderRegistry:
         *,
         replace: bool = False,
         requires_base_url: bool = True,
+        supports_local_only: bool = True,
     ) -> None:
         if not isinstance(name, str) or not name or name.strip() != name:
             raise ValueError("Provider adapter name must be a non-empty identifier.")
@@ -38,11 +40,17 @@ class ProviderRegistry:
             raise ValueError(f"Provider adapter '{name}' is already registered.")
         self._factories[name] = factory
         self._requires_base_url[name] = requires_base_url
+        self._supports_local_only[name] = supports_local_only
 
     def requires_base_url(self, name: str) -> bool:
         if name not in self._factories:
             raise provider.ProviderError(f"Unknown provider adapter '{name}'.")
         return self._requires_base_url[name]
+
+    def supports_local_only(self, name: str) -> bool:
+        if name not in self._factories:
+            raise provider.ProviderError(f"Unknown provider adapter '{name}'.")
+        return self._supports_local_only[name]
 
     def create(
         self,
@@ -89,6 +97,7 @@ def create_default_provider_registry() -> ProviderRegistry:
             api_key=api_key,
         ),
         requires_base_url=False,
+        supports_local_only=False,
     )
     return registry
 
@@ -139,6 +148,10 @@ def build_runtime_provider(
         raise ValueError("route_mode must be single, auto, local or cloud.")
     if config.privacy_mode not in {"balanced", "local-only"}:
         raise ValueError("privacy_mode must be balanced or local-only.")
+    if config.local.base_url and not active_registry.supports_local_only(config.local.adapter):
+        raise ValueError(
+            f"Provider adapter '{config.local.adapter}' cannot be configured as a local provider."
+        )
 
     local_provider = (
         active_registry.create(
