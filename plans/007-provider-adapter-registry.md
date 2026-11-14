@@ -1,12 +1,12 @@
-# Plan 007: Add a provider registry and one deliberately selected native adapter
+# Plan 007: Provider adapter registry and four selected provider integrations
 
-> **Executor instructions**: First inspect current provider and router contracts. This plan is about extending supported model transports without changing the agent loop. Do not add multiple adapters at once or silently claim that all models from a provider are tool/stream compatible. Obtain a maintainer decision on the first target provider before implementing that adapter; if none is selected, complete only the provider registry/config design and report the decision needed.
+> **Executor instructions**: First inspect current provider and router contracts. This plan extends supported model transports without changing the agent loop. The maintainer selected four targets on 2026-11-14: Anthropic Messages API, Claude Code CLI, OpenAI Codex CLI, and Gemini API. Implement them as four focused PRs, not one large change. Never claim tool/stream compatibility that the transport does not provide. CLI adapters must preserve NextOrca permission checks and tool execution boundaries; do not delegate workspace access to a provider CLI behind the runtime.
 
 > **Drift check (run first)**: `git diff --stat 6a29cc0..HEAD -- nextorca/provider.py nextorca/openai_compatible.py nextorca/routing.py nextorca/cli.py nextorca/types.py nextorca/provider_registry.py pyproject.toml tests`. This implementation is based on the rebased full-screen UI branch at `6a29cc0`; compare live files before editing if they change again.
 
 ## Status
 
-- **Execution state**: BLOCKED for a native adapter pending explicit maintainer target selection; registry/factory implementation is in [PR #34](https://github.com/ahmedaisar/NextOrca/pull/30).
+- **Execution state**: IN PROGRESS; maintainer selected Anthropic API, Claude Code CLI, OpenAI Codex CLI and Gemini API on 2026-11-14. Registry/factory implementation is merged; native adapters are delivered as separate PRs. First adapter: Anthropic Messages API.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -16,7 +16,7 @@
 
 ## Why this matters
 
-NextOrca already has a clean `ChatProvider` protocol and optional streaming protocol, but the CLI currently wires only `OpenAICompatibleProvider` for single-provider and hybrid local/cloud turns. Atomic Agent supports several native provider protocols and subscription-backed CLIs; that flexibility is valuable, but copying its entire provider catalogue would increase maintenance and support burden. Add an explicit provider construction/configuration seam and one adapter chosen from an actual maintainer use case.
+NextOrca already has a clean `ChatProvider` protocol and optional streaming protocol, but the CLI currently wires only `OpenAICompatibleProvider` for single-provider and hybrid local/cloud turns. Atomic Agent supports several native provider protocols and subscription-backed CLIs; that flexibility is valuable, but copying its entire provider catalogue would increase maintenance and support burden. Add an explicit provider construction/configuration seam and the four adapters explicitly selected by the maintainer: Anthropic Messages API, Claude Code CLI, OpenAI Codex CLI, and Gemini API. Keep each transport in its own focused pull request; native APIs and subscription-backed CLIs must preserve their distinct authentication, process and tool-execution boundaries.
 
 ## Current state
 
@@ -57,8 +57,8 @@ NextOrca already has a clean `ChatProvider` protocol and optional streaming prot
 
 ## Git workflow
 
-- Branch: `feat/provider-adapter-registry`.
-- One focused PR. Use Conventional Commit messages such as `feat: add provider adapter registry`.
+- Branch: one focused feature branch per adapter, beginning with `feat/anthropic-messages-provider`.
+- One PR per adapter. Use Conventional Commit messages such as `feat: add Anthropic Messages provider`.
 - Keep CI limited to provider/routing tests plus normal quick PR checks.
 
 ## Steps
@@ -75,11 +75,16 @@ Introduce a small configuration-to-provider factory. It should support current s
 
 **Verify**: the contract lists required tests for authentication, messages, tools, streaming, errors, usage, privacy/routing, lifecycle and terms; it states that only `openai-compatible` is registered.
 
-### Step 3: Implement only the selected adapter (blocked)
+### Step 3: Implement the four selected adapters as separate PRs
 
-STOP here until the maintainer selects a precise target and clarifies whether it is a native HTTP API or a subscription CLI. Do not pick Anthropic API, Claude CLI, Codex CLI or any other adapter without that decision. After selection, use HTTPX unless the protocol concretely requires another dependency, normalize to the existing turn/chunk types, and preserve permanent-error versus availability-error handling.
+1. Anthropic Messages API (native HTTP): normalize system/messages, tool schemas, tool-use blocks, usage and errors.
+2. Claude Code CLI (subscription-backed): implement only after proving a machine-readable request/response contract that returns normalized tool calls without bypassing NextOrca permissions.
+3. OpenAI Codex CLI (subscription-backed): apply the same process, cancellation, timeout, output parsing and permission-boundary requirements.
+4. Gemini API (native HTTP): normalize messages, function calls, usage and provider errors.
 
-**Verify**: focused adapter tests pass with mocked HTTP responses and stream frames; no real API key or paid model call is required in CI.
+Use HTTPX for native APIs and a bounded subprocess wrapper for CLI transports. Keep process cancellation and stderr/stdout separation explicit. A CLI that cannot safely satisfy `ChatProvider` must be exposed through a separate execution backend rather than falsely registered as a chat-completion adapter.
+
+**Verify**: focused adapter tests pass with mocked HTTP responses or fake executable processes; no real API key or paid model call is required in CI.
 
 ### Step 4: Prove routing and privacy invariants
 
@@ -99,7 +104,7 @@ Run the same local/cloud and local-only behavior through the new adapter. Verify
 ## Done criteria
 
 - [x] CLI no longer contains provider-construction duplication; current OpenAI-compatible setup remains default-compatible.
-- [ ] One additional native adapter is implemented only after its target is explicitly selected (not yet complete; implementation is blocked pending the maintainer's choice).
+- [ ] Four selected integrations are complete: Anthropic Messages API, Claude Code CLI, OpenAI Codex CLI and Gemini API, each in a separate reviewed PR.
 - [ ] Streaming/tool-call behavior is represented in adapter contract tests.
 - [x] Local-only routing cannot reach cloud through the new registry/factory.
 - [x] No provider-specific logic is placed in `AgentRuntime` or task classifier.
