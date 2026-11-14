@@ -26,7 +26,7 @@ def test_sessions_list_command_is_offline_and_workspace_scoped(tmp_path, monkeyp
     def unexpected_provider(*args, **kwargs):
         pytest.fail("sessions commands must not construct a model provider")
 
-    monkeypatch.setattr("nextorca.cli.OpenAICompatibleProvider", unexpected_provider)
+    monkeypatch.setattr("nextorca.cli.build_runtime_provider", unexpected_provider)
     code = main([
         "sessions", "list",
         "--workspace", str(tmp_path),
