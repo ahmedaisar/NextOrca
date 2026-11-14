@@ -61,8 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("NEXTORCA_BASE_URL", "http://127.0.0.1:8080/v1"),
-        help="Single-provider OpenAI-compatible API base URL.",
+        default=os.environ.get("NEXTORCA_BASE_URL"),
+        help="Provider API base URL override (native adapters use their vendor default).",
     )
     parser.add_argument(
         "--model",
@@ -417,15 +417,35 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         route_logger = log_route if (args.verbose or interactive) and not use_tui else None
 
+        single_api_key = args.api_key
+        if single_api_key is None:
+            if args.provider_adapter == "anthropic":
+                single_api_key = os.environ.get("ANTHROPIC_API_KEY")
+            elif args.provider_adapter == "gemini":
+                single_api_key = os.environ.get("GEMINI_API_KEY")
+
+        cloud_api_key = os.environ.get("NEXTORCA_CLOUD_API_KEY")
+        if cloud_api_key is None:
+            if args.cloud_provider_adapter == "anthropic":
+                cloud_api_key = os.environ.get("ANTHROPIC_API_KEY")
+            elif args.cloud_provider_adapter == "gemini":
+                cloud_api_key = os.environ.get("GEMINI_API_KEY")
+            else:
+                cloud_api_key = args.cloud_api_key
+
+        single_base_url = args.base_url
+        if single_base_url is None and args.provider_adapter == DEFAULT_PROVIDER_ADAPTER:
+            single_base_url = "http://127.0.0.1:8080/v1"
+
         provider, runtime_model = build_runtime_provider(
             RuntimeProviderConfig(
                 route_mode=args.route_mode,
                 privacy_mode=args.privacy_mode,
                 single=ProviderEndpoint(
                     adapter=args.provider_adapter,
-                    base_url=args.base_url,
+                    base_url=single_base_url,
                     model=args.model,
-                    api_key=args.api_key,
+                    api_key=single_api_key,
                 ),
                 local=ProviderEndpoint(
                     adapter=args.local_provider_adapter,
@@ -437,7 +457,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     adapter=args.cloud_provider_adapter,
                     base_url=args.cloud_base_url,
                     model=args.cloud_model,
-                    api_key=args.cloud_api_key,
+                    api_key=cloud_api_key,
                 ),
             ),
             on_route=route_logger,

@@ -40,7 +40,7 @@ NextOrca is an AI coding agent that lives in the terminal. It should inspect a r
 
 These are optional improvements, not commercial launch gates:
 
-1. Native provider adapters beyond OpenAI Chat Completions compatibility.
+1. Native provider adapters beyond OpenAI Chat Completions compatibility (Plan 007: Anthropic PR #43 in progress; Claude Code CLI, Codex CLI and Gemini API queued as separate PRs).
 2. More ergonomic skill/plugin management commands and an optional community catalog.
 3. Optional bounded subagents for independent parallel work.
 4. Better cancellation and process-tree cleanup for long-running shell commands.
