@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from nextorca import openai_compatible, provider, routing
+from nextorca import anthropic, openai_compatible, provider, routing
 
 ProviderFactory = Callable[..., provider.ChatProvider]
 DEFAULT_PROVIDER_ADAPTER = "openai-compatible"
@@ -14,6 +14,7 @@ class ProviderRegistry:
 
     def __init__(self) -> None:
         self._factories: dict[str, ProviderFactory] = {}
+        self._requires_base_url: dict[str, bool] = {}
 
     @property
     def adapters(self) -> tuple[str, ...]:
@@ -25,6 +26,7 @@ class ProviderRegistry:
         factory: ProviderFactory,
         *,
         replace: bool = False,
+        requires_base_url: bool = True,
     ) -> None:
         if not isinstance(name, str) or not name or name.strip() != name:
             raise ValueError("Provider adapter name must be a non-empty identifier.")
@@ -35,6 +37,12 @@ class ProviderRegistry:
         if name in self._factories and not replace:
             raise ValueError(f"Provider adapter '{name}' is already registered.")
         self._factories[name] = factory
+        self._requires_base_url[name] = requires_base_url
+
+    def requires_base_url(self, name: str) -> bool:
+        if name not in self._factories:
+            raise provider.ProviderError(f"Unknown provider adapter '{name}'.")
+        return self._requires_base_url[name]
 
     def create(
         self,
@@ -49,10 +57,11 @@ class ProviderRegistry:
             raise provider.ProviderError(
                 f"Unknown provider adapter '{name}'. Available adapters: {available}."
             )
-        if not isinstance(base_url, str) or not base_url.strip():
+        if self._requires_base_url[name] and (not isinstance(base_url, str) or not base_url.strip()):
             raise provider.ProviderError(f"Provider adapter '{name}' requires a base URL.")
         try:
-            instance = factory(base_url=base_url.strip(), api_key=api_key)
+            normalized_base_url = base_url.strip() if isinstance(base_url, str) and base_url.strip() else None
+            instance = factory(base_url=normalized_base_url, api_key=api_key)
         except (ValueError, TypeError) as exc:
             raise provider.ProviderError(
                 f"Provider adapter '{name}' could not be configured: {type(exc).__name__}."
@@ -72,6 +81,14 @@ def create_default_provider_registry() -> ProviderRegistry:
             base_url,
             api_key=api_key,
         ),
+    )
+    registry.register(
+        "anthropic",
+        lambda *, base_url=None, api_key=None: anthropic.AnthropicMessagesProvider(
+            base_url,
+            api_key=api_key,
+        ),
+        requires_base_url=False,
     )
     return registry
 
@@ -138,9 +155,9 @@ def build_runtime_provider(
             base_url=config.cloud.base_url,
             api_key=config.cloud.api_key,
         )
-        if config.privacy_mode != "local-only"
-        and config.cloud.base_url
-        and config.route_mode in {"auto", "cloud"}
+        if config.route_mode in {"auto", "cloud"}
+        and config.privacy_mode != "local-only"
+        and (config.cloud.base_url or not active_registry.requires_base_url(config.cloud.adapter))
         else None
     )
     router = routing.HybridRouter(
