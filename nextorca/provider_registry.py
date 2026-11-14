@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import nextorca.openai_compatible as openai_compatible
-import nextorca.provider as provider
-import nextorca.routing as routing
+from nextorca import openai_compatible
+from nextorca import provider
+from nextorca import routing
 
 
 ProviderFactory = Callable[..., provider.ChatProvider]
