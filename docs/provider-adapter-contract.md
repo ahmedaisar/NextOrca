@@ -1,7 +1,7 @@
 # Provider adapter contract
 
 **Status:** active contract for the provider registry  
-**Implemented adapter:** `openai-compatible` only  
+**Implemented adapters:** `openai-compatible`, `anthropic`  
 **Owner:** `nextorca/provider.py`, `nextorca/provider_registry.py`
 
 ## Runtime boundary
@@ -15,22 +15,23 @@ The current normalized interface is:
 
 A completed `AssistantTurn` carries text, ordered tool calls (with stable IDs and object arguments), finish reason and normalized token usage. A stream emits text deltas and ends with one final normalized turn. A provider that does not stream may implement only `complete`; `HybridRouter` wraps its response into one final stream chunk.
 
-The registry factory currently uses a common endpoint constructor signature: `factory(base_url=..., api_key=...)`. Add a richer immutable config object only when the next selected provider needs transport-specific fields. Never push provider wire-format branches into `AgentRuntime` or `HybridRouter`.
+The registry factory uses `factory(base_url=..., api_key=...)`. Adapters with a provider-owned default endpoint may register with `requires_base_url=False`; the registry passes `None` when no override is supplied. Keep transport-specific configuration inside the adapter unless the shared runtime genuinely needs it. Never push provider wire-format branches into `AgentRuntime` or `HybridRouter`.
 
 ## Current registry
 
 | Adapter ID | Status | Transport |
 |---|---|---|
-| `openai-compatible` | Implemented and covered by existing adapter tests | HTTPX Chat Completions endpoint, optional bearer API key |
+| `openai-compatible` | Implemented and covered by adapter tests | HTTPX Chat Completions endpoint, optional bearer API key |
+| `anthropic` | Implemented and covered by adapter tests | HTTPX Messages API, `x-api-key` authentication |
 
-No Anthropic API, Claude CLI, Codex CLI, Gemini-native or other vendor-specific transport is registered yet. An unknown adapter name fails during configuration; it is not silently converted into the OpenAI-compatible adapter.
+Claude Code CLI, OpenAI Codex CLI and Gemini-native transports remain unimplemented. Anthropic uses the native Messages API; it is not routed through an OpenAI-compatible shim. An unknown adapter name fails during configuration; it is not silently converted into the OpenAI-compatible adapter.
 
 CLI selection:
 - Single provider: `--provider-adapter` / `NEXTORCA_PROVIDER_ADAPTER`
 - Local endpoint: `--local-provider-adapter` / `NEXTORCA_LOCAL_PROVIDER_ADAPTER`
 - Cloud endpoint: `--cloud-provider-adapter` / `NEXTORCA_CLOUD_PROVIDER_ADAPTER`
 
-All default to `openai-compatible`.
+All default to `openai-compatible`. The Anthropic adapter defaults to `https://api.anthropic.com`; set `--base-url` only when using a compatible proxy or gateway.
 
 ## Checklist for the first native adapter
 
@@ -60,4 +61,4 @@ uv run pytest
 
 ## Selection gate
 
-The next adapter implementation remains blocked until the maintainer chooses a target. A subscription CLI adapter and a provider HTTP API are different integrations with different credential, lifecycle, user-account and terms implications; do not infer one from the provider brand name.
+The maintainer selected Anthropic Messages API, Claude Code CLI, OpenAI Codex CLI and Gemini API on 2026-11-14. Implement each separately. A subscription CLI adapter and a provider HTTP API are different integrations with different credential, lifecycle, user-account and terms implications; do not infer one from the provider brand name. A CLI adapter must not bypass NextOrca permission checks or execute workspace tools outside the normalized runtime boundary.
