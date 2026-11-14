@@ -115,10 +115,10 @@ Run the same local/cloud and local-only behavior through the new adapter. Verify
 
 Stop and report if:
 - The selected API does not support the tool-call or streaming shape needed by the current protocol and adapting it would require a runtime redesign.
-- Provider target is not selected by the maintainer; do not guess between Claude CLI, Codex CLI, Anthropic API or another provider.
+- A selected CLI integration cannot expose a safe, machine-readable tool-call boundary that preserves NextOrca approvals; stop and propose a separate execution-backend design rather than weakening the runtime.
 - Supporting the adapter requires adding credentials to SQLite, command logs or prompt context.
 - A permanent authentication/schema error would be treated as provider unavailability and silently trigger fallback.
-- Implementing one adapter requires changing the public semantics of `ChatProvider` or `HybridRouter`.
+- Implementing an adapter requires changing the public semantics of `ChatProvider` or `HybridRouter` without a separately reviewed protocol design.
 
 ## Maintenance notes
 
