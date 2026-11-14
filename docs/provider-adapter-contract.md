@@ -1,7 +1,7 @@
 # Provider adapter contract
 
 **Status:** active contract for the provider registry  
-**Implemented adapters:** `openai-compatible`, `anthropic`, `claude-code-cli`  
+**Implemented adapters:** `openai-compatible`, `anthropic`, `claude-code-cli`, `codex-cli`  
 **Owner:** `nextorca/provider.py`, `nextorca/provider_registry.py`
 
 ## Runtime boundary
@@ -24,10 +24,11 @@ The registry factory uses `factory(base_url=..., api_key=...)`. Adapters with a 
 | `openai-compatible` | Implemented and covered by adapter tests | HTTPX Chat Completions endpoint, optional bearer API key |
 | `anthropic` | Implemented and covered by adapter tests | HTTPX Messages API, `x-api-key` authentication |
 | `claude-code-cli` | Implemented and covered by fake-process tests | Subscription-backed CLI, schema-validated JSON output, built-in tools and MCP disabled |
+| `codex-cli` | Implemented and covered by fake-process tests | Subscription-backed CLI, output schema, read-only sandbox, tool features disabled |
 
-OpenAI Codex CLI and Gemini-native transports remain unimplemented. Claude Code CLI runs in a temporary working directory with built-in tools, MCP and session persistence disabled; it returns structured tool proposals for NextOrca to validate and execute. Anthropic uses the native Messages API; it is not routed through an OpenAI-compatible shim.
+OpenAI Codex CLI and Gemini-native transports remain unimplemented. Claude Code CLI and Codex CLI run in temporary working directories with built-in workspace tools disabled; they return structured tool proposals for NextOrca to validate and execute. Codex additionally uses a read-only sandbox and ignores user/project configuration. Anthropic uses the native Messages API; it is not routed through an OpenAI-compatible shim.
 
-The registry marks adapters that can serve the local-provider slot. Anthropic and Claude Code CLI are cloud-only and are rejected in the local provider slot, including local-only privacy mode; do not configure them as local fallbacks. An unknown adapter name fails during configuration; it is not silently converted into the OpenAI-compatible adapter.
+The registry marks adapters that can serve the local-provider slot. Anthropic, Claude Code CLI and Codex CLI are cloud-only and are rejected in the local provider slot, including local-only privacy mode; do not configure them as local fallbacks. An unknown adapter name fails during configuration; it is not silently converted into the OpenAI-compatible adapter.
 
 CLI selection:
 - Single provider: `--provider-adapter` / `NEXTORCA_PROVIDER_ADAPTER`
