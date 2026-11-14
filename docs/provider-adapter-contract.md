@@ -33,7 +33,7 @@ CLI selection:
 
 All default to `openai-compatible`. The Anthropic adapter defaults to `https://api.anthropic.com`; set `--base-url` only when using a compatible proxy or gateway.
 
-## Checklist for the first native adapter
+## Compatibility checklist for a new adapter
 
 Before implementing a native provider, obtain an explicit maintainer choice and record the exact API or CLI mode. Verify every item with official provider documentation and a mocked test before describing the adapter as supported.
 
