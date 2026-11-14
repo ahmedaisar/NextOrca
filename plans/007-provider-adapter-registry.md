@@ -73,7 +73,7 @@ Introduce a small configuration-to-provider factory. It should support current s
 
 `docs/provider-adapter-contract.md` records the current normalized provider contract, the single supported adapter, and the checklist for the first native adapter. Do not declare a new provider supported until a target is selected and the checklist is validated against its official API or CLI documentation.
 
-**Verify**: the contract lists required tests for authentication, messages, tools, streaming, errors, usage, privacy/routing, lifecycle and terms; it states that only `openai-compatible` is registered.
+**Verify**: the contract lists required tests for authentication, messages, tools, streaming, errors, usage, privacy/routing, lifecycle and terms, and accurately lists every registered adapter.
 
 ### Step 3: Implement the four selected adapters as separate PRs
 
