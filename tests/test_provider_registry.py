@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from nextorca.anthropic import AnthropicMessagesProvider
 from nextorca.openai_compatible import OpenAICompatibleProvider
 from nextorca.provider import ProviderError
 from nextorca.provider_registry import (
@@ -61,10 +62,10 @@ def _stub_registry() -> tuple[ProviderRegistry, list[dict[str, Any]]]:
     return registry, created
 
 
-def test_default_registry_exposes_only_the_tested_openai_compatible_adapter():
+def test_default_registry_exposes_tested_adapters_and_keeps_openai_default():
     registry = create_default_provider_registry()
 
-    assert registry.adapters == (DEFAULT_PROVIDER_ADAPTER,)
+    assert registry.adapters == ("anthropic", DEFAULT_PROVIDER_ADAPTER)
     provider = registry.create(
         DEFAULT_PROVIDER_ADAPTER,
         base_url="https://api.example/v1",
@@ -74,6 +75,13 @@ def test_default_registry_exposes_only_the_tested_openai_compatible_adapter():
     assert isinstance(provider, OpenAICompatibleProvider)
     assert provider.endpoint == "https://api.example/v1/chat/completions"
     assert provider.api_key == "test-key"
+
+    anthropic_provider = registry.create("anthropic", base_url=None, api_key="anthropic-key")
+    assert isinstance(anthropic_provider, AnthropicMessagesProvider)
+    assert anthropic_provider.endpoint == "https://api.anthropic.com/v1/messages"
+
+    with pytest.raises(ProviderError, match="requires a base URL"):
+        registry.create(DEFAULT_PROVIDER_ADAPTER, base_url=None)
 
 
 def test_registry_rejects_duplicate_and_unknown_adapter_names():
@@ -200,3 +208,23 @@ def test_build_cloud_route_is_rejected_in_local_only_mode_without_constructing_a
         build_runtime_provider(_config("cloud", privacy="local-only"), registry=registry)
 
     assert created == []
+
+
+def test_native_provider_can_be_constructed_without_a_custom_base_url():
+    registry = create_default_provider_registry()
+    provider = registry.create("anthropic", base_url=None, api_key="test-key")
+
+    assert isinstance(provider, AnthropicMessagesProvider)
+    assert registry.requires_base_url("anthropic") is False
+
+
+def test_local_route_does_not_validate_an_unselected_cloud_adapter():
+    registry, created = _stub_registry()
+    config = _config("local", cloud_adapter="not-installed", cloud_url=None)
+
+    provider, model = build_runtime_provider(config, registry=registry)
+
+    assert isinstance(provider, HybridRouter)
+    assert model == "hybrid"
+    assert provider.cloud_provider is None
+    assert [item["base_url"] for item in created] == ["http://127.0.0.1:8080/v1"]
