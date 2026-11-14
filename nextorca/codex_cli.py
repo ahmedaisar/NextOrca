@@ -15,7 +15,6 @@ from nextorca.cli_provider import (
 from nextorca.provider import ProviderError
 from nextorca.types import AssistantTurn
 
-
 DISABLED_CODEX_FEATURES = (
     "shell_tool",
     "unified_exec",
