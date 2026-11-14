@@ -280,7 +280,7 @@ The single-provider mode accepts these options:
 | `--base-url` | `NEXTORCA_BASE_URL` | OpenAI-compatible API base URL |
 | `--model` | `NEXTORCA_MODEL` | Model identifier |
 | `--api-key` | `NEXTORCA_API_KEY` | Provider API key |
-| `--provider-adapter` | `NEXTORCA_PROVIDER_ADAPTER` | Single-provider transport (currently `openai-compatible`) |
+| `--provider-adapter` | `NEXTORCA_PROVIDER_ADAPTER` | Single-provider transport (`openai-compatible` or `anthropic`) |
 | `--local-provider-adapter` | `NEXTORCA_LOCAL_PROVIDER_ADAPTER` | Local transport adapter in hybrid mode |
 | `--cloud-provider-adapter` | `NEXTORCA_CLOUD_PROVIDER_ADAPTER` | Cloud transport adapter in hybrid mode |
 | `--workspace` | — | Workspace root (defaults to current directory) |
