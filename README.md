@@ -280,7 +280,7 @@ The single-provider mode accepts these options:
 | `--base-url` | `NEXTORCA_BASE_URL` | OpenAI-compatible API base URL |
 | `--model` | `NEXTORCA_MODEL` | Model identifier |
 | `--api-key` | `NEXTORCA_API_KEY` | Provider API key |
-| `--provider-adapter` | `NEXTORCA_PROVIDER_ADAPTER` | Single-provider transport (`openai-compatible`, `anthropic`, `claude-code-cli` or `codex-cli`) |
+| `--provider-adapter` | `NEXTORCA_PROVIDER_ADAPTER` | Single-provider transport (`openai-compatible`, `anthropic`, `claude-code-cli`, `codex-cli` or `gemini`) |
 | `--local-provider-adapter` | `NEXTORCA_LOCAL_PROVIDER_ADAPTER` | Local transport adapter in hybrid mode |
 | `--cloud-provider-adapter` | `NEXTORCA_CLOUD_PROVIDER_ADAPTER` | Cloud transport adapter in hybrid mode |
 | `--workspace` | — | Workspace root (defaults to current directory) |
@@ -289,7 +289,7 @@ The single-provider mode accepts these options:
 | `--session-id` | `NEXTORCA_SESSION_ID` | Resume an existing session |
 | `--verbose` | — | Emit structured runtime and routing events to stderr |
 
-Hybrid mode additionally supports `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_LOCAL_API_KEY`, `NEXTORCA_LOCAL_PROVIDER_ADAPTER`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_CLOUD_API_KEY`, and `NEXTORCA_CLOUD_PROVIDER_ADAPTER`. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The provider registry ships `openai-compatible`, the native `anthropic` Messages API adapter, `claude-code-cli`, and `codex-cli`. For Anthropic, set `NEXTORCA_PROVIDER_ADAPTER=anthropic`, `ANTHROPIC_API_KEY`, and `NEXTORCA_MODEL` to a Claude model ID. For the subscription-backed CLIs, set `NEXTORCA_PROVIDER_ADAPTER=claude-code-cli` or `codex-cli` and authenticate the corresponding CLI on the same machine. The Anthropic API adapter defaults to `https://api.anthropic.com`; use `NEXTORCA_BASE_URL` only for a compatible proxy. See the [provider adapter contract](docs/provider-adapter-contract.md) before proposing another transport.
+Hybrid mode additionally supports `NEXTORCA_LOCAL_BASE_URL`, `NEXTORCA_LOCAL_MODEL`, `NEXTORCA_LOCAL_API_KEY`, `NEXTORCA_LOCAL_PROVIDER_ADAPTER`, `NEXTORCA_CLOUD_BASE_URL`, `NEXTORCA_CLOUD_MODEL`, `NEXTORCA_CLOUD_API_KEY`, and `NEXTORCA_CLOUD_PROVIDER_ADAPTER`. `OPENROUTER_API_KEY` is accepted as a cloud-key fallback. The provider registry ships `openai-compatible`, the native `anthropic` Messages API adapter, `claude-code-cli`, `codex-cli`, and `gemini`. For Anthropic, set `NEXTORCA_PROVIDER_ADAPTER=anthropic`, `ANTHROPIC_API_KEY`, and `NEXTORCA_MODEL` to a Claude model ID. For the subscription-backed CLIs, set `NEXTORCA_PROVIDER_ADAPTER=claude-code-cli` or `codex-cli` and authenticate the corresponding CLI on the same machine. For Gemini API, set `NEXTORCA_PROVIDER_ADAPTER=gemini` and `GEMINI_API_KEY`. The Anthropic API adapter defaults to `https://api.anthropic.com`; use `NEXTORCA_BASE_URL` only for a compatible proxy. See the [provider adapter contract](docs/provider-adapter-contract.md) before proposing another transport.
 
 Useful permission and maintenance options:
 

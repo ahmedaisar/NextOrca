@@ -8,6 +8,7 @@ from nextorca import (
     anthropic,
     claude_code_cli,
     codex_cli,
+    gemini,
     openai_compatible,
     provider,
     routing,
@@ -97,6 +98,15 @@ def create_default_provider_registry() -> ProviderRegistry:
             base_url,
             api_key=api_key,
         ),
+    )
+    registry.register(
+        "gemini",
+        lambda *, base_url=None, api_key=None: gemini.GeminiProvider(
+            base_url,
+            api_key=api_key,
+        ),
+        requires_base_url=False,
+        supports_local_only=False,
     )
     registry.register(
         "codex-cli",
