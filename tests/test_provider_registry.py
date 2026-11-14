@@ -216,6 +216,8 @@ def test_native_provider_can_be_constructed_without_a_custom_base_url():
 
     assert isinstance(provider, AnthropicMessagesProvider)
     assert registry.requires_base_url("anthropic") is False
+    assert registry.supports_local_only("anthropic") is False
+    assert registry.supports_local_only(DEFAULT_PROVIDER_ADAPTER) is True
 
 
 def test_local_route_does_not_validate_an_unselected_cloud_adapter():
@@ -228,3 +230,10 @@ def test_local_route_does_not_validate_an_unselected_cloud_adapter():
     assert model == "hybrid"
     assert provider.cloud_provider is None
     assert [item["base_url"] for item in created] == ["http://127.0.0.1:8080/v1"]
+
+
+def test_local_route_rejects_anthropic_as_a_local_provider():
+    config = _config("local", local_adapter="anthropic")
+
+    with pytest.raises(ValueError, match="cannot be configured as a local provider"):
+        build_runtime_provider(config)
